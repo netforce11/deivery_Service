@@ -48,7 +48,6 @@ class MyApp extends StatelessWidget {
       ),
       routes: {
         '/login': (_) => const LoginScreen(),
-        '/': (_) => const StoreListScreen(),
         '/cart': (_) => const CartScreen(),
         '/orders': (_) => const OrderHistoryScreen(),
       },

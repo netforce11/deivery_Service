@@ -70,8 +70,7 @@ class _OrderScreenState extends State<OrderScreen> {
 
       if (mounted) {
         // 주문 완료 → 주문 내역으로 이동
-        Navigator.pushNamedAndRemoveUntil(context, '/', (r) => false);
-        Navigator.pushNamed(context, '/orders');
+        Navigator.pushNamedAndRemoveUntil(context, '/orders', (r) => false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('주문이 완료되었어요! 🎉'),
