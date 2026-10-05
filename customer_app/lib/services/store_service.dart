@@ -56,7 +56,23 @@ class StoreService {
   // ── 샘플 가게 데이터 Firestore에 추가 (개발용) ────────────────────
   Future<void> seedSampleData() async {
     final storesSnap = await _db.collection('stores').limit(1).get();
-    if (storesSnap.docs.isNotEmpty) return; // 이미 있으면 스킵
+
+    // 가게는 있는데 메뉴가 없으면 메뉴만 다시 추가
+    if (storesSnap.docs.isNotEmpty) {
+      final menusSnap = await _db.collection('menus').limit(1).get();
+      if (menusSnap.docs.isEmpty) {
+        final storeId = storesSnap.docs.first.id;
+        final menus = [
+          {'storeId': storeId, 'name': '전주비빔밥', 'price': 12000, 'description': '전통 방식 비빔밥', 'imageUrl': '', 'isAvailable': true},
+          {'storeId': storeId, 'name': '돌솥비빔밥', 'price': 13000, 'description': '뜨끈한 돌솥', 'imageUrl': '', 'isAvailable': true},
+          {'storeId': storeId, 'name': '콩나물국밥', 'price': 9000, 'description': '해장에 최고', 'imageUrl': '', 'isAvailable': true},
+        ];
+        for (final menu in menus) {
+          await _db.collection('menus').add(menu);
+        }
+      }
+      return;
+    }
 
     final stores = [
       {
