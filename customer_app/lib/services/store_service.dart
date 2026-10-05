@@ -28,9 +28,12 @@ class StoreService {
     final snap = await _db
         .collection('menus')
         .where('storeId', isEqualTo: storeId)
-        .where('isAvailable', isEqualTo: true)
         .get();
-    return snap.docs.map((d) => MenuModel.fromMap(d.data(), d.id)).toList();
+    // isAvailable 필터는 Dart에서 처리 (복합 인덱스 불필요)
+    return snap.docs
+        .map((d) => MenuModel.fromMap(d.data(), d.id))
+        .where((m) => m.isAvailable)
+        .toList();
   }
 
   // ── 주문 생성 ─────────────────────────────────────────────────────
