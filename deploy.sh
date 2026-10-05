@@ -18,8 +18,13 @@ cd rider_app
 flutter build web --release
 cd ..
 
-echo "🚀 Deploying to Firebase Hosting..."
-firebase deploy --only hosting
+echo "📦 Installing Cloud Functions dependencies..."
+cd functions
+npm install
+cd ..
+
+echo "🚀 Deploying to Firebase Hosting + Cloud Functions..."
+firebase deploy --only hosting,functions
 
 echo ""
 echo "✅ 배포 완료!"

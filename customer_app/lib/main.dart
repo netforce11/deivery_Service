@@ -8,12 +8,14 @@ import 'screens/auth/login_screen.dart';
 import 'screens/store/store_list_screen.dart';
 import 'screens/cart/cart_screen.dart';
 import 'screens/order/order_history_screen.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await NotificationService.initialize();
   runApp(
     ChangeNotifierProvider(
       create: (_) => CartProvider(),
