@@ -17,6 +17,7 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   final StoreService _storeService = StoreService();
   List<MenuModel> _menus = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -25,8 +26,12 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
   }
 
   Future<void> _loadMenus() async {
-    final menus = await _storeService.getMenus(widget.store.id);
-    if (mounted) setState(() { _menus = menus; _loading = false; });
+    try {
+      final menus = await _storeService.getMenus(widget.store.id);
+      if (mounted) setState(() { _menus = menus; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    }
   }
 
   Future<void> _addToCart(MenuModel menu) async {
@@ -162,6 +167,30 @@ class _StoreDetailScreenState extends State<StoreDetailScreen> {
           if (_loading)
             const SliverFillRemaining(
               child: Center(child: CircularProgressIndicator(color: Colors.orange)),
+            )
+          else if (_error != null)
+            SliverFillRemaining(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                      const SizedBox(height: 12),
+                      Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          setState(() { _loading = true; _error = null; });
+                          _loadMenus();
+                        },
+                        child: const Text('다시 시도'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             )
           else if (_menus.isEmpty)
             const SliverFillRemaining(
