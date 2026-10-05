@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "YOUR_FIREBASE_PROJECT_ID"
+  },
+  "targets": {
+    "YOUR_FIREBASE_PROJECT_ID": {
+      "hosting": {
+        "customer": ["delivery-customer-app"],
+        "store": ["delivery-store-app"],
+        "rider": ["delivery-rider-app"]
+      }
+    }
+  }
+}
