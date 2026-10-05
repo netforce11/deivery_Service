@@ -178,18 +178,6 @@ class _OrderScreenState extends State<OrderScreen> {
                   _priceRow('배달비', cart.deliveryFee),
                   const Divider(height: 24),
                   _priceRow('최종 결제금액', cart.total, bold: true, color: Colors.orange),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '* 플랫폼 수수료 ${_fmt((cart.subtotal * 0.12).round())}원은 업체 부담입니다',
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                    ),
-                  ),
                 ],
               ),
             ),

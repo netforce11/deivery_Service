@@ -47,10 +47,12 @@ class StoreService {
     return _db
         .collection('orders')
         .where('customerId', isEqualTo: customerId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) =>
-            snap.docs.map((d) => OrderModel.fromMap(d.data(), d.id)).toList());
+        .map((snap) {
+          final list = snap.docs.map((d) => OrderModel.fromMap(d.data(), d.id)).toList();
+          list.sort((a, b) => b.createdAt.compareTo(a.createdAt)); // Dart에서 정렬
+          return list;
+        });
   }
 
   // ── 샘플 가게 데이터 Firestore에 추가 (개발용) ────────────────────
