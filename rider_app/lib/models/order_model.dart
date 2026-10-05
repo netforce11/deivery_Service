@@ -26,6 +26,8 @@ class OrderModel {
   final int totalPrice;
   final String status;
   final String? riderId;
+  final double? riderLat;
+  final double? riderLng;
   final DateTime createdAt;
 
   OrderModel({
@@ -40,6 +42,8 @@ class OrderModel {
     required this.totalPrice,
     required this.status,
     this.riderId,
+    this.riderLat,
+    this.riderLng,
     required this.createdAt,
   });
 
@@ -57,6 +61,8 @@ class OrderModel {
       totalPrice: (map['totalPrice'] ?? 0).toInt(),
       status: map['status'] ?? 'pending',
       riderId: map['riderId'],
+      riderLat: map['riderLat'] != null ? (map['riderLat'] as num).toDouble() : null,
+      riderLng: map['riderLng'] != null ? (map['riderLng'] as num).toDouble() : null,
       createdAt: map['createdAt'] is Timestamp
           ? (map['createdAt'] as Timestamp).toDate()
           : DateTime.now(),

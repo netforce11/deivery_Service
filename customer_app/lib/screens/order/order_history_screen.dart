@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../models/order_model.dart';
 import '../../services/store_service.dart';
 
@@ -55,6 +57,12 @@ class _OrderCard extends StatelessWidget {
   final OrderModel order;
   const _OrderCard({required this.order});
 
+  bool get _isActive =>
+      order.status == 'assigned' || order.status == 'picked_up';
+
+  bool get _hasRiderPos =>
+      order.riderLat != null && order.riderLng != null;
+
   @override
   Widget build(BuildContext context) {
     final statusInfo = _statusInfo(order.status);
@@ -62,81 +70,168 @@ class _OrderCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 상태 + 날짜
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusInfo.bg,
-                    borderRadius: BorderRadius.circular(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 라이더 실시간 지도 (배달 중일 때만)
+          if (_isActive && _hasRiderPos)
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              child: Stack(
+                children: [
+                  SizedBox(
+                    height: 200,
+                    child: FlutterMap(
+                      options: MapOptions(
+                        initialCenter: LatLng(order.riderLat!, order.riderLng!),
+                        initialZoom: 15,
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.delivery.customer',
+                        ),
+                        MarkerLayer(markers: [
+                          // 라이더
+                          Marker(
+                            point: LatLng(order.riderLat!, order.riderLng!),
+                            child: const Icon(Icons.delivery_dining,
+                                color: Colors.green, size: 36),
+                          ),
+                          // 배달지
+                          if (order.deliveryLat != 0 && order.deliveryLng != 0)
+                            Marker(
+                              point: LatLng(order.deliveryLat, order.deliveryLng),
+                              child: const Icon(Icons.home_outlined,
+                                  color: Colors.red, size: 32),
+                            ),
+                        ]),
+                      ],
+                    ),
                   ),
-                  child: Text(statusInfo.label,
-                      style: TextStyle(
-                          color: statusInfo.color,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13)),
-                ),
-                Text(
-                  _dateStr(order.createdAt),
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            // 주문 상태 진행 표시
-            _StatusBar(status: order.status),
-            const SizedBox(height: 12),
-            const Divider(),
-            // 아이템 목록
-            ...order.items.map((item) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(item.name)),
-                      Text('${item.quantity}개',
-                          style: TextStyle(color: Colors.grey.shade600)),
-                      const SizedBox(width: 12),
-                      Text('${_fmt(item.price * item.quantity)}원',
-                          style: const TextStyle(fontWeight: FontWeight.w500)),
-                    ],
+                  // 지도 위 라벨
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4)
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.delivery_dining,
+                              size: 14, color: Colors.green),
+                          const SizedBox(width: 4),
+                          Text(
+                            order.status == 'picked_up'
+                                ? '라이더가 배달 중이에요 🚴'
+                                : '라이더가 픽업하러 가고 있어요',
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                )),
-            const Divider(),
-            // 금액
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('음식 ${_fmt(order.totalPrice)}원 + 배달비 ${_fmt(order.deliveryFee)}원',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-                Text(
-                  '${_fmt(order.totalPrice + order.deliveryFee)}원',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange, fontSize: 16),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            // 주소
-            Row(
+
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.location_on, size: 14, color: Colors.grey.shade400),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(order.deliveryAddress,
+                // 상태 + 날짜
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusInfo.bg,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(statusInfo.label,
+                          style: TextStyle(
+                              color: statusInfo.color,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13)),
+                    ),
+                    Text(
+                      _dateStr(order.createdAt),
                       style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // 주문 상태 진행 표시
+                _StatusBar(status: order.status),
+                const SizedBox(height: 12),
+                const Divider(),
+                // 아이템 목록
+                ...order.items.map((item) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text(item.name)),
+                          Text('${item.quantity}개',
+                              style: TextStyle(color: Colors.grey.shade600)),
+                          const SizedBox(width: 12),
+                          Text('${_fmt(item.price * item.quantity)}원',
+                              style: const TextStyle(fontWeight: FontWeight.w500)),
+                        ],
+                      ),
+                    )),
+                const Divider(),
+                // 금액
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                        '음식 ${_fmt(order.totalPrice)}원 + 배달비 ${_fmt(order.deliveryFee)}원',
+                        style: TextStyle(
+                            color: Colors.grey.shade600, fontSize: 13)),
+                    Text(
+                      '${_fmt(order.totalPrice + order.deliveryFee)}원',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange,
+                          fontSize: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // 주소
+                Row(
+                  children: [
+                    Icon(Icons.location_on,
+                        size: 14, color: Colors.grey.shade400),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(order.deliveryAddress,
+                          style: TextStyle(
+                              color: Colors.grey.shade500, fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -190,7 +285,6 @@ class _StatusBar extends StatelessWidget {
     return Row(
       children: List.generate(_steps.length * 2 - 1, (i) {
         if (i.isOdd) {
-          // 연결선
           final stepIdx = i ~/ 2;
           final filled = stepIdx < currentIdx;
           return Expanded(
@@ -200,7 +294,6 @@ class _StatusBar extends StatelessWidget {
             ),
           );
         }
-        // 스텝 원
         final stepIdx = i ~/ 2;
         final done = stepIdx <= currentIdx;
         return Column(

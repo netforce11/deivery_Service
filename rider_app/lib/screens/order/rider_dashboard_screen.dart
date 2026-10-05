@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../models/order_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/order_service.dart';
+import '../../services/location_service.dart';
 
 class RiderDashboardScreen extends StatefulWidget {
   const RiderDashboardScreen({super.key});
@@ -15,6 +18,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     with SingleTickerProviderStateMixin {
   final _orderService = OrderService();
   final _authService = AuthService();
+  final _locationService = LocationService();
   late TabController _tabController;
   String? _riderId;
 
@@ -23,11 +27,13 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _riderId = FirebaseAuth.instance.currentUser?.uid;
+    _locationService.requestPermission();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _locationService.dispose();
     super.dispose();
   }
 
@@ -49,7 +55,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () => _authService.signOut(),
+            onPressed: () {
+              _locationService.stopTracking();
+              _authService.signOut();
+            },
           ),
         ],
         bottom: TabBar(
@@ -66,7 +75,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          // 탭 1: 배달 가능한 주문 (accepted, 라이더 미배정)
+          // 탭 1: 배달 가능한 주문
           StreamBuilder<List<OrderModel>>(
             stream: _orderService.watchAvailableOrders(),
             builder: (context, snap) {
@@ -76,8 +85,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               }
               final orders = snap.data ?? [];
               if (orders.isEmpty) {
-                return _emptyState(
-                    '대기 중인 배달이 없어요', Icons.delivery_dining_outlined);
+                return _emptyState('대기 중인 배달이 없어요', Icons.delivery_dining_outlined);
               }
               return ListView.builder(
                 padding: const EdgeInsets.all(12),
@@ -86,11 +94,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   order: orders[i],
                   onAccept: () async {
                     await _orderService.acceptDelivery(orders[i].id, _riderId!);
+                    _locationService.startTracking(orders[i].id);
                     if (mounted) {
                       _tabController.animateTo(1);
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('배달을 수락했어요! 가게로 이동해주세요 🚴'),
+                          content: Text('배달을 수락했어요! 위치 추적 시작 🚴'),
                           backgroundColor: Colors.green,
                         ),
                       );
@@ -101,7 +110,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             },
           ),
 
-          // 탭 2: 내가 진행 중인 배달
+          // 탭 2: 내 배달
           StreamBuilder<List<OrderModel>>(
             stream: _riderId != null
                 ? _orderService.watchMyOrders(_riderId!)
@@ -120,7 +129,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 itemCount: orders.length,
                 itemBuilder: (_, i) => _MyOrderCard(
                   order: orders[i],
-                  onPickup: () => _orderService.pickupOrder(orders[i].id),
+                  onPickup: () async {
+                    await _orderService.pickupOrder(orders[i].id);
+                    _locationService.startTracking(orders[i].id);
+                  },
                   onComplete: () => _confirmComplete(orders[i].id),
                 ),
               );
@@ -164,6 +176,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     );
     if (ok == true) {
       await _orderService.completeDelivery(orderId);
+      _locationService.stopTracking();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -266,7 +279,7 @@ class _AvailableOrderCard extends StatelessWidget {
   }
 }
 
-// ── 내 배달 카드 ────────────────────────────────────────────────────────────
+// ── 내 배달 카드 (지도 포함) ────────────────────────────────────────────────
 class _MyOrderCard extends StatelessWidget {
   final OrderModel order;
   final VoidCallback onPickup;
@@ -279,101 +292,156 @@ class _MyOrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isAssigned = order.status == 'assigned';
     final isPickedUp = order.status == 'picked_up';
+    final hasRiderPos =
+        order.riderLat != null && order.riderLng != null;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 지도
+          if (hasRiderPos)
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(14)),
+              child: SizedBox(
+                height: 180,
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter:
+                        LatLng(order.riderLat!, order.riderLng!),
+                    initialZoom: 15,
+                  ),
                   children: [
-                    Icon(Icons.store, size: 16, color: Colors.green.shade600),
-                    const SizedBox(width: 6),
-                    Text(order.storeName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15)),
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.delivery.rider',
+                    ),
+                    MarkerLayer(markers: [
+                      // 라이더 위치
+                      Marker(
+                        point: LatLng(order.riderLat!, order.riderLng!),
+                        child: const Icon(Icons.delivery_dining,
+                            color: Colors.green, size: 32),
+                      ),
+                      // 배달지 위치
+                      if (order.deliveryLat != 0 && order.deliveryLng != 0)
+                        Marker(
+                          point: LatLng(
+                              order.deliveryLat, order.deliveryLng),
+                          child: const Icon(Icons.location_on,
+                              color: Colors.red, size: 32),
+                        ),
+                    ]),
                   ],
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isPickedUp
-                        ? Colors.teal.shade50
-                        : Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    isPickedUp ? '픽업 완료' : '픽업 대기',
-                    style: TextStyle(
-                      color: isPickedUp ? Colors.teal : Colors.orange,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+              ),
+            ),
+
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.store, size: 16, color: Colors.green.shade600),
+                        const SizedBox(width: 6),
+                        Text(order.storeName,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 15)),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isPickedUp
+                            ? Colors.teal.shade50
+                            : Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        isPickedUp ? '픽업 완료' : '픽업 대기',
+                        style: TextStyle(
+                          color:
+                              isPickedUp ? Colors.teal : Colors.orange,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // 진행 상태 바
+                Row(
+                  children: [
+                    _step('수락', true),
+                    _line(isPickedUp),
+                    _step('픽업', isPickedUp),
+                    _line(false),
+                    _step('완료', false, dim: true),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                ...order.items.map((item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text('• ${item.name} ${item.quantity}개',
+                          style: TextStyle(
+                              color: Colors.grey.shade700, fontSize: 13)),
+                    )),
+                const Divider(height: 16),
+                Row(
+                  children: [
+                    Icon(Icons.location_on,
+                        size: 14, color: Colors.grey.shade400),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(order.deliveryAddress,
+                          style: TextStyle(
+                              color: Colors.grey.shade500, fontSize: 12),
+                          maxLines: 2),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isPickedUp
+                          ? Colors.green.shade600
+                          : Colors.orange,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: isAssigned
+                        ? onPickup
+                        : (isPickedUp ? onComplete : null),
+                    child: Text(
+                      isAssigned ? '🛵  픽업 완료' : '🎉  배달 완료',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 15),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-
-            // 진행 상태 바
-            Row(
-              children: [
-                _step('수락', true),
-                _line(isPickedUp),
-                _step('픽업', isPickedUp),
-                _line(false),
-                _step('완료', false, dim: true),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            ...order.items.map((item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text('• ${item.name} ${item.quantity}개',
-                      style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
-                )),
-            const Divider(height: 16),
-            Row(
-              children: [
-                Icon(Icons.location_on, size: 14, color: Colors.grey.shade400),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(order.deliveryAddress,
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                      maxLines: 2),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      isPickedUp ? Colors.green.shade600 : Colors.orange,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                ),
-                onPressed: isAssigned ? onPickup : (isPickedUp ? onComplete : null),
-                child: Text(
-                  isAssigned ? '🛵  픽업 완료' : '🎉  배달 완료',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -390,14 +458,17 @@ class _MyOrderCard extends StatelessWidget {
                 ? Colors.green.shade600
                 : (dim ? Colors.grey.shade200 : Colors.grey.shade300),
           ),
-          child: Icon(Icons.check, size: 14,
+          child: Icon(Icons.check,
+              size: 14,
               color: active ? Colors.white : Colors.grey.shade400),
         ),
         const SizedBox(height: 2),
         Text(label,
             style: TextStyle(
                 fontSize: 10,
-                color: active ? Colors.green.shade600 : Colors.grey.shade400)),
+                color: active
+                    ? Colors.green.shade600
+                    : Colors.grey.shade400)),
       ],
     );
   }

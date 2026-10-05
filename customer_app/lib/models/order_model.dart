@@ -46,6 +46,8 @@ class OrderModel {
   final double deliveryLng;
   // pending → accepted → assigned → picked_up → delivered → cancelled
   final String status;
+  final double? riderLat;
+  final double? riderLng;
   final DateTime createdAt;
 
   OrderModel({
@@ -63,6 +65,8 @@ class OrderModel {
     required this.deliveryLat,
     required this.deliveryLng,
     required this.status,
+    this.riderLat,
+    this.riderLng,
     required this.createdAt,
   });
 
@@ -85,6 +89,8 @@ class OrderModel {
       deliveryLat: map['deliveryLat'] ?? 0.0,
       deliveryLng: map['deliveryLng'] ?? 0.0,
       status: map['status'] ?? 'pending',
+      riderLat: map['riderLat'] != null ? (map['riderLat'] as num).toDouble() : null,
+      riderLng: map['riderLng'] != null ? (map['riderLng'] as num).toDouble() : null,
       createdAt: map['createdAt']?.toDate() ?? DateTime.now(),
     );
   }
