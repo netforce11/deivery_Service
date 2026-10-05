@@ -1,25 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 import 'firebase_options.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/home/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Linux 개발환경에서는 Android 옵션 사용
-  FirebaseOptions options = DefaultFirebaseOptions.android;
-  if (!kIsWeb) {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      options = DefaultFirebaseOptions.android;
-    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-      options = DefaultFirebaseOptions.ios;
-    }
-  } else {
-    options = DefaultFirebaseOptions.web;
-  }
-
-  await Firebase.initializeApp(options: options);
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const MyApp());
 }
 
@@ -35,7 +24,11 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.orange),
         useMaterial3: true,
       ),
-      home: const LoginScreen(),
+      initialRoute: '/login',
+      routes: {
+        '/login': (_) => const LoginScreen(),
+        '/home': (_) => const HomeScreen(),
+      },
     );
   }
 }
