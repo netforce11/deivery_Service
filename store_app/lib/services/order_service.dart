@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/order_model.dart';
 import '../models/store_model.dart';
+import '../models/menu_model.dart';
 
 class OrderService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -44,5 +45,38 @@ class OrderService {
   // 가게 영업 상태 토글
   Future<void> toggleStoreOpen(String storeId, bool isOpen) async {
     await _db.collection('stores').doc(storeId).update({'isOpen': isOpen});
+  }
+
+  // ── 메뉴 관리 ──────────────────────────────────────────────────────────────
+
+  // 메뉴 목록 스트림
+  Stream<List<MenuModel>> watchMenus(String storeId) {
+    return _db
+        .collection('menus')
+        .where('storeId', isEqualTo: storeId)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => MenuModel.fromMap(d.data(), d.id))
+            .toList());
+  }
+
+  // 메뉴 추가
+  Future<void> addMenu(MenuModel menu) async {
+    await _db.collection('menus').add(menu.toMap());
+  }
+
+  // 메뉴 수정
+  Future<void> updateMenu(String menuId, Map<String, dynamic> data) async {
+    await _db.collection('menus').doc(menuId).update(data);
+  }
+
+  // 메뉴 삭제
+  Future<void> deleteMenu(String menuId) async {
+    await _db.collection('menus').doc(menuId).delete();
+  }
+
+  // 메뉴 공개여부 토글
+  Future<void> toggleMenuAvailable(String menuId, bool isAvailable) async {
+    await _db.collection('menus').doc(menuId).update({'isAvailable': isAvailable});
   }
 }

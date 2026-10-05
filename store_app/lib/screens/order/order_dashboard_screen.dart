@@ -4,6 +4,7 @@ import '../../models/order_model.dart';
 import '../../models/store_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/order_service.dart';
+import '../menu/menu_management_screen.dart';
 
 class OrderDashboardScreen extends StatefulWidget {
   const OrderDashboardScreen({super.key});
@@ -174,6 +175,16 @@ class _OrderDashboardScreenState extends State<OrderDashboardScreen>
                     inactiveThumbColor: Colors.white54,
                   ),
                 ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.restaurant_menu),
+                tooltip: '메뉴 관리',
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MenuManagementScreen(store: _store!),
+                  ),
+                ),
               ),
               IconButton(
                 icon: const Icon(Icons.logout),
