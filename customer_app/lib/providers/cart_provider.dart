@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/menu_model.dart';
 import '../models/store_model.dart';
+import '../utils/delivery_fee_calculator.dart';
 
 class CartItem {
   final MenuModel menu;
@@ -12,24 +13,47 @@ class CartProvider extends ChangeNotifier {
   StoreModel? _store;
   final List<CartItem> _items = [];
 
+  // 배달 거리 (주소 선택 시 설정)
+  double? _distanceKm;
+
   StoreModel? get store => _store;
   List<CartItem> get items => List.unmodifiable(_items);
+  double? get distanceKm => _distanceKm;
 
   int get itemCount => _items.fold(0, (sum, e) => sum + e.quantity);
-
   int get subtotal => _items.fold(0, (sum, e) => sum + e.menu.price * e.quantity);
 
-  int get deliveryFee => 3500;
+  /// 거리 기반 배달비 (거리 미설정 시 기본 3,500원)
+  int get deliveryFee => _distanceKm != null
+      ? DeliveryFeeCalculator.calculate(_distanceKm!)
+      : 3500;
 
   int get total => subtotal + deliveryFee;
 
-  // 다른 가게 메뉴를 담으려 할 때 true 반환 → UI에서 확인 다이얼로그 표시
+  bool get isLongDistance =>
+      _distanceKm != null && DeliveryFeeCalculator.isLongDistance(_distanceKm!);
+
+  String get distanceLabel => _distanceKm != null
+      ? '${_distanceKm!.toStringAsFixed(1)}km · ${DeliveryFeeCalculator.label(_distanceKm!)}'
+      : '';
+
+  /// 배달 거리 업데이트 (주소 선택 시 호출)
+  void setDeliveryDistance(double km) {
+    _distanceKm = km;
+    notifyListeners();
+  }
+
+  void clearDistance() {
+    _distanceKm = null;
+    notifyListeners();
+  }
+
   bool isDifferentStore(StoreModel newStore) {
     return _store != null && _store!.id != newStore.id && _items.isNotEmpty;
   }
 
   void addItem(MenuModel menu, StoreModel store) {
-    if (isDifferentStore(store)) return; // 호출 전 확인 필수
+    if (isDifferentStore(store)) return;
     _store = store;
     final idx = _items.indexWhere((e) => e.menu.id == menu.id);
     if (idx >= 0) {
@@ -61,6 +85,7 @@ class CartProvider extends ChangeNotifier {
   void clear() {
     _items.clear();
     _store = null;
+    _distanceKm = null;
     notifyListeners();
   }
 }

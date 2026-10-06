@@ -29,6 +29,8 @@ class OrderModel {
   final String? riderId;
   final double? riderLat;
   final double? riderLng;
+  final double? distanceKm;     // 가게→배달지 거리
+  final bool isLongDistance;    // 7km 초과 여부
   final DateTime createdAt;
 
   OrderModel({
@@ -46,6 +48,8 @@ class OrderModel {
     this.riderId,
     this.riderLat,
     this.riderLng,
+    this.distanceKm,
+    this.isLongDistance = false,
     required this.createdAt,
   });
 
@@ -66,6 +70,8 @@ class OrderModel {
       riderId: map['riderId'],
       riderLat: map['riderLat'] != null ? (map['riderLat'] as num).toDouble() : null,
       riderLng: map['riderLng'] != null ? (map['riderLng'] as num).toDouble() : null,
+      distanceKm: map['distanceKm'] != null ? (map['distanceKm'] as num).toDouble() : null,
+      isLongDistance: map['isLongDistance'] ?? false,
       createdAt: map['createdAt'] is Timestamp
           ? (map['createdAt'] as Timestamp).toDate()
           : DateTime.now(),

@@ -24,6 +24,13 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   late TabController _tabController;
   String? _riderId;
 
+  // 필터: 0=전체, 1=단거리, 2=장거리
+  int _filterIndex = 0;
+  // 장거리 전용 모드
+  bool _longDistanceOnly = false;
+
+  static const _filterLabels = ['전체', '단거리', '장거리'];
+
   @override
   void initState() {
     super.initState();
@@ -39,6 +46,57 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     super.dispose();
   }
 
+  List<OrderModel> _applyFilter(List<OrderModel> orders) {
+    if (_longDistanceOnly || _filterIndex == 2) {
+      return orders.where((o) => o.isLongDistance).toList();
+    }
+    if (_filterIndex == 1) {
+      return orders.where((o) => !o.isLongDistance).toList();
+    }
+    return orders;
+  }
+
+  void _showLongDistanceModeDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.route, color: Colors.purple.shade600),
+            const SizedBox(width: 8),
+            const Text('장거리 전용 모드'),
+          ],
+        ),
+        content: Text(
+          _longDistanceOnly
+              ? '장거리 전용 모드를 끄면 모든 배달 요청을 수신합니다.'
+              : '장거리 전용 모드를 켜면 7km 초과 배달 요청만 수신합니다.\n\n장거리 배달은 더 높은 배달비(8,000원~)를 제공합니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor:
+                  _longDistanceOnly ? Colors.grey : Colors.purple.shade600,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(context, !_longDistanceOnly),
+            child: Text(_longDistanceOnly ? '모드 끄기' : '모드 켜기'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _longDistanceOnly = result;
+        if (result) _filterIndex = 0; // 장거리 전용 모드 켜면 필터 초기화
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -46,15 +104,32 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       appBar: AppBar(
         backgroundColor: Colors.green.shade600,
         foregroundColor: Colors.white,
-        title: const Column(
+        title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('라이더 대시보드',
+            const Text('라이더 대시보드',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Text('배달 관리', style: TextStyle(fontSize: 12, color: Colors.white70)),
+            Text(
+              _longDistanceOnly ? '🟣 장거리 전용 모드' : '배달 관리',
+              style: TextStyle(
+                fontSize: 12,
+                color: _longDistanceOnly
+                    ? Colors.purple.shade100
+                    : Colors.white70,
+              ),
+            ),
           ],
         ),
         actions: [
+          // 장거리 전용 모드 토글 버튼
+          IconButton(
+            icon: Icon(
+              Icons.route,
+              color: _longDistanceOnly ? Colors.purple.shade100 : Colors.white,
+            ),
+            tooltip: '장거리 전용 모드',
+            onPressed: _showLongDistanceModeDialog,
+          ),
           IconButton(
             icon: const Icon(Icons.account_balance_wallet_outlined),
             tooltip: '수익 관리',
@@ -93,31 +168,106 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 return const Center(
                     child: CircularProgressIndicator(color: Colors.green));
               }
-              final orders = snap.data ?? [];
-              if (orders.isEmpty) {
-                return _emptyState('대기 중인 배달이 없어요', Icons.delivery_dining_outlined);
-              }
-              return ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: orders.length,
-                itemBuilder: (_, i) => _AvailableOrderCard(
-                  order: orders[i],
-                  riderLat: _locationService.currentLat,
-                  riderLng: _locationService.currentLng,
-                  onAccept: () async {
-                    await _orderService.acceptDelivery(orders[i].id, _riderId!);
-                    _locationService.startTracking(orders[i].id);
-                    if (mounted) {
-                      _tabController.animateTo(1);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('배달을 수락했어요! 위치 추적 시작 🚴'),
-                          backgroundColor: Colors.green,
+              final allOrders = snap.data ?? [];
+              final orders = _applyFilter(allOrders);
+
+              return Column(
+                children: [
+                  // 장거리 전용 모드 배너
+                  if (_longDistanceOnly)
+                    Container(
+                      width: double.infinity,
+                      color: Colors.purple.shade50,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.route,
+                              size: 16, color: Colors.purple.shade600),
+                          const SizedBox(width: 8),
+                          Text(
+                            '장거리 전용 모드 활성화 — 7km 초과 배달만 표시',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.purple.shade700,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // 필터 칩 (장거리 전용 모드가 아닐 때만 표시)
+                  if (!_longDistanceOnly)
+                    Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      child: Row(
+                        children: List.generate(
+                          _filterLabels.length,
+                          (i) => Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(_filterLabels[i]),
+                              selected: _filterIndex == i,
+                              onSelected: (_) =>
+                                  setState(() => _filterIndex = i),
+                              selectedColor: i == 2
+                                  ? Colors.purple.shade100
+                                  : Colors.green.shade100,
+                              labelStyle: TextStyle(
+                                color: _filterIndex == i
+                                    ? (i == 2
+                                        ? Colors.purple.shade700
+                                        : Colors.green.shade700)
+                                    : Colors.grey.shade600,
+                                fontWeight: _filterIndex == i
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
                         ),
-                      );
-                    }
-                  },
-                ),
+                      ),
+                    ),
+
+                  // 주문 목록
+                  Expanded(
+                    child: orders.isEmpty
+                        ? _emptyState(
+                            _filterIndex == 2 || _longDistanceOnly
+                                ? '장거리 배달 요청이 없어요'
+                                : _filterIndex == 1
+                                    ? '단거리 배달 요청이 없어요'
+                                    : '대기 중인 배달이 없어요',
+                            Icons.delivery_dining_outlined,
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(12),
+                            itemCount: orders.length,
+                            itemBuilder: (_, i) => _AvailableOrderCard(
+                              order: orders[i],
+                              riderLat: _locationService.currentLat,
+                              riderLng: _locationService.currentLng,
+                              onAccept: () async {
+                                await _orderService.acceptDelivery(
+                                    orders[i].id, _riderId!);
+                                _locationService.startTracking(orders[i].id);
+                                if (mounted) {
+                                  _tabController.animateTo(1);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('배달을 수락했어요! 위치 추적 시작 🚴'),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                  ),
+                ],
               );
             },
           ),
@@ -275,6 +425,23 @@ class _AvailableOrderCard extends StatelessWidget {
                         Text(order.storeName,
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 15)),
+                        if (order.isLongDistance) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.shade50,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.purple.shade200),
+                            ),
+                            child: Text('장거리',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.purple.shade700,
+                                    fontWeight: FontWeight.bold)),
+                          ),
+                        ],
                       ],
                     ),
                     Row(
@@ -536,8 +703,14 @@ class _OrderDetailSheetState extends State<_OrderDetailSheet> {
                       _infoCol(Icons.schedule, '예상 시간',
                           etaMin != null ? '약 ${etaMin}분' : '-'),
                       _divider(),
-                      _infoCol(Icons.payments, '배달료', '3,500원',
-                          valueColor: Colors.green.shade700),
+                      _infoCol(
+                        order.isLongDistance ? Icons.workspace_premium : Icons.payments,
+                        '배달료',
+                        '${_fmtFee(order.riderPay)}원',
+                        valueColor: order.isLongDistance
+                            ? Colors.purple.shade700
+                            : Colors.green.shade700,
+                      ),
                     ],
                   ),
                 ),
@@ -922,6 +1095,9 @@ class _MyOrderCardState extends State<_MyOrderCard> {
     );
   }
 }
+
+String _fmtFee(int n) => n.toString().replaceAllMapped(
+    RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
 
 String _timeStr(DateTime dt) {
   final now = DateTime.now();

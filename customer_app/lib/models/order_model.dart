@@ -48,6 +48,8 @@ class OrderModel {
   final String status;
   final double? riderLat;
   final double? riderLng;
+  final double? distanceKm;   // 가게→배달지 거리
+  final bool isLongDistance;  // 7km 초과 여부
   final DateTime createdAt;
 
   OrderModel({
@@ -67,6 +69,8 @@ class OrderModel {
     required this.status,
     this.riderLat,
     this.riderLng,
+    this.distanceKm,
+    this.isLongDistance = false,
     required this.createdAt,
   });
 
@@ -91,6 +95,8 @@ class OrderModel {
       status: map['status'] ?? 'pending',
       riderLat: map['riderLat'] != null ? (map['riderLat'] as num).toDouble() : null,
       riderLng: map['riderLng'] != null ? (map['riderLng'] as num).toDouble() : null,
+      distanceKm: map['distanceKm'] != null ? (map['distanceKm'] as num).toDouble() : null,
+      isLongDistance: map['isLongDistance'] ?? false,
       createdAt: map['createdAt']?.toDate() ?? DateTime.now(),
     );
   }
@@ -110,6 +116,8 @@ class OrderModel {
       'deliveryLat': deliveryLat,
       'deliveryLng': deliveryLng,
       'status': status,
+      'distanceKm': distanceKm,
+      'isLongDistance': isLongDistance,
       'createdAt': createdAt,
     };
   }
