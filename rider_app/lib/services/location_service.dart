@@ -7,6 +7,10 @@ class LocationService {
   Timer? _timer;
   String? _currentOrderId;
 
+  // 마지막으로 알려진 위치
+  double? currentLat;
+  double? currentLng;
+
   // 위치 권한 요청
   Future<bool> requestPermission() async {
     LocationPermission perm = await Geolocator.checkPermission();
@@ -37,6 +41,8 @@ class LocationService {
     _timer = Timer.periodic(const Duration(seconds: 5), (_) async {
       final pos = await getCurrentPosition();
       if (pos != null && _currentOrderId != null) {
+        currentLat = pos.latitude;
+        currentLng = pos.longitude;
         await _db.collection('orders').doc(_currentOrderId).update({
           'riderLat': pos.latitude,
           'riderLng': pos.longitude,
@@ -51,6 +57,8 @@ class LocationService {
   Future<void> _updateNow(String orderId) async {
     final pos = await getCurrentPosition();
     if (pos != null) {
+      currentLat = pos.latitude;
+      currentLng = pos.longitude;
       await _db.collection('orders').doc(orderId).update({
         'riderLat': pos.latitude,
         'riderLng': pos.longitude,

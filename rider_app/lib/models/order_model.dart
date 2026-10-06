@@ -24,6 +24,7 @@ class OrderModel {
   final double deliveryLng;
   final List<OrderItem> items;
   final int totalPrice;
+  final int riderPay;
   final String status;
   final String? riderId;
   final double? riderLat;
@@ -40,6 +41,7 @@ class OrderModel {
     required this.deliveryLng,
     required this.items,
     required this.totalPrice,
+    this.riderPay = 3500,
     required this.status,
     this.riderId,
     this.riderLat,
@@ -59,6 +61,7 @@ class OrderModel {
       deliveryLng: (map['deliveryLng'] ?? 0.0).toDouble(),
       items: rawItems.map((e) => OrderItem.fromMap(e as Map<String, dynamic>)).toList(),
       totalPrice: (map['totalPrice'] ?? 0).toInt(),
+      riderPay: (map['riderPay'] ?? 3500).toInt(),
       status: map['status'] ?? 'pending',
       riderId: map['riderId'],
       riderLat: map['riderLat'] != null ? (map['riderLat'] as num).toDouble() : null,

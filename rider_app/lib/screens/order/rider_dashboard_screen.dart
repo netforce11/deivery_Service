@@ -6,6 +6,7 @@ import '../../models/order_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/order_service.dart';
 import '../../services/location_service.dart';
+import '../../services/routing_service.dart';
 import '../earnings/earnings_screen.dart';
 
 class RiderDashboardScreen extends StatefulWidget {
@@ -101,6 +102,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 itemCount: orders.length,
                 itemBuilder: (_, i) => _AvailableOrderCard(
                   order: orders[i],
+                  riderLat: _locationService.currentLat,
+                  riderLng: _locationService.currentLng,
                   onAccept: () async {
                     await _orderService.acceptDelivery(orders[i].id, _riderId!);
                     _locationService.startTracking(orders[i].id);
@@ -198,89 +201,164 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   }
 }
 
-// ── 배달 가능 주문 카드 ─────────────────────────────────────────────────────
+// ── 배달 가능 주문 카드 (탭하면 상세 바텀시트) ──────────────────────────────────
 class _AvailableOrderCard extends StatelessWidget {
   final OrderModel order;
+  final double? riderLat;
+  final double? riderLng;
   final VoidCallback onAccept;
 
-  const _AvailableOrderCard({required this.order, required this.onAccept});
+  const _AvailableOrderCard({
+    required this.order,
+    required this.riderLat,
+    required this.riderLng,
+    required this.onAccept,
+  });
+
+  void _showDetail(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _OrderDetailSheet(
+        order: order,
+        riderLat: riderLat,
+        riderLng: riderLng,
+        onAccept: () {
+          Navigator.pop(context);
+          onAccept();
+        },
+        onReject: () => Navigator.pop(context),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 2,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.green.shade200, width: 1.5),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.store, size: 16, color: Colors.green.shade600),
-                      const SizedBox(width: 6),
-                      Text(order.storeName,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 15)),
-                    ],
-                  ),
-                  Text(_timeStr(order.createdAt),
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-                ],
-              ),
-              const SizedBox(height: 10),
-              ...order.items.map((item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
-                    child: Text('• ${item.name} ${item.quantity}개',
-                        style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
-                  )),
-              const Divider(height: 16),
-              Row(
-                children: [
-                  Icon(Icons.location_on, size: 14, color: Colors.grey.shade400),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(order.deliveryAddress,
-                        style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('${_fmt(order.totalPrice)}원',
-                      style: TextStyle(
-                          color: Colors.green.shade700,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15)),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green.shade600,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 8),
+    // 라이더 위치가 있으면 거리 계산
+    double? distKm;
+    int? etaMin;
+    if (riderLat != null &&
+        riderLng != null &&
+        order.deliveryLat != 0 &&
+        order.deliveryLng != 0) {
+      distKm = RoutingService.distanceKm(
+        LatLng(riderLat!, riderLng!),
+        LatLng(order.deliveryLat, order.deliveryLng),
+      );
+      etaMin = RoutingService.estimatedMinutes(distKm);
+    }
+
+    return GestureDetector(
+      onTap: () => _showDetail(context),
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        elevation: 2,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.green.shade200, width: 1.5),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.store, size: 16, color: Colors.green.shade600),
+                        const SizedBox(width: 6),
+                        Text(order.storeName,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 15)),
+                      ],
                     ),
-                    onPressed: onAccept,
-                    child: const Text('배달 수락',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            ],
+                    Row(
+                      children: [
+                        Text(_timeStr(order.createdAt),
+                            style: TextStyle(
+                                color: Colors.grey.shade500, fontSize: 12)),
+                        const SizedBox(width: 8),
+                        // 상세보기 힌트
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text('상세보기',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey.shade500)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ...order.items.map((item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text('• ${item.name} ${item.quantity}개',
+                          style: TextStyle(
+                              color: Colors.grey.shade700, fontSize: 13)),
+                    )),
+                const Divider(height: 16),
+                Row(
+                  children: [
+                    Icon(Icons.location_on,
+                        size: 14, color: Colors.grey.shade400),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(order.deliveryAddress,
+                          style: TextStyle(
+                              color: Colors.grey.shade500, fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // 거리/예상 시간
+                    if (distKm != null)
+                      Row(
+                        children: [
+                          Icon(Icons.directions_bike,
+                              size: 14, color: Colors.blue.shade400),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${distKm.toStringAsFixed(1)}km · 약 ${etaMin}분',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.blue.shade600),
+                          ),
+                        ],
+                      )
+                    else
+                      const SizedBox.shrink(),
+                    // 수락 버튼
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade600,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 8),
+                      ),
+                      onPressed: onAccept,
+                      child: const Text('배달 수락',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -288,8 +366,293 @@ class _AvailableOrderCard extends StatelessWidget {
   }
 }
 
-// ── 내 배달 카드 (지도 포함) ────────────────────────────────────────────────
-class _MyOrderCard extends StatelessWidget {
+// ── 주문 상세 바텀시트 (거절 포함) ────────────────────────────────────────────
+class _OrderDetailSheet extends StatefulWidget {
+  final OrderModel order;
+  final double? riderLat;
+  final double? riderLng;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  const _OrderDetailSheet({
+    required this.order,
+    required this.riderLat,
+    required this.riderLng,
+    required this.onAccept,
+    required this.onReject,
+  });
+
+  @override
+  State<_OrderDetailSheet> createState() => _OrderDetailSheetState();
+}
+
+class _OrderDetailSheetState extends State<_OrderDetailSheet> {
+  List<LatLng> _route = [];
+  bool _loadingRoute = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRoute();
+  }
+
+  Future<void> _loadRoute() async {
+    if (widget.riderLat == null ||
+        widget.riderLng == null ||
+        widget.order.deliveryLat == 0) return;
+    setState(() => _loadingRoute = true);
+    final route = await RoutingService.getRoute(
+      LatLng(widget.riderLat!, widget.riderLng!),
+      LatLng(widget.order.deliveryLat, widget.order.deliveryLng),
+    );
+    if (mounted) setState(() { _route = route; _loadingRoute = false; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final order = widget.order;
+    double? distKm;
+    int? etaMin;
+    if (widget.riderLat != null && widget.riderLng != null && order.deliveryLat != 0) {
+      distKm = RoutingService.distanceKm(
+        LatLng(widget.riderLat!, widget.riderLng!),
+        LatLng(order.deliveryLat, order.deliveryLng),
+      );
+      etaMin = RoutingService.estimatedMinutes(distKm);
+    }
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 드래그 핸들
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // 지도 미리보기 (라이더 위치 → 배달지)
+          if (order.deliveryLat != 0)
+            SizedBox(
+              height: 200,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                child: Stack(
+                  children: [
+                    FlutterMap(
+                      options: MapOptions(
+                        initialCenter: LatLng(order.deliveryLat, order.deliveryLng),
+                        initialZoom: 14,
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.delivery.rider',
+                        ),
+                        // 경로 폴리라인
+                        if (_route.isNotEmpty)
+                          PolylineLayer(polylines: [
+                            Polyline(
+                              points: _route,
+                              color: Colors.blue,
+                              strokeWidth: 4,
+                            ),
+                          ]),
+                        MarkerLayer(markers: [
+                          // 배달지
+                          Marker(
+                            point: LatLng(order.deliveryLat, order.deliveryLng),
+                            child: const Icon(Icons.location_on,
+                                color: Colors.red, size: 32),
+                          ),
+                          // 라이더 현재 위치
+                          if (widget.riderLat != null && widget.riderLng != null)
+                            Marker(
+                              point: LatLng(widget.riderLat!, widget.riderLng!),
+                              child: const Icon(Icons.delivery_dining,
+                                  color: Colors.green, size: 28),
+                            ),
+                        ]),
+                      ],
+                    ),
+                    if (_loadingRoute)
+                      const Center(
+                        child: CircularProgressIndicator(color: Colors.blue),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 상세 정보
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 가게명 + 시간
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.store, color: Colors.green.shade600, size: 18),
+                        const SizedBox(width: 6),
+                        Text(order.storeName,
+                            style: const TextStyle(
+                                fontSize: 17, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    Text(_timeStr(order.createdAt),
+                        style: TextStyle(
+                            color: Colors.grey.shade400, fontSize: 12)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // 거리 / 예상 시간 / 배달료 정보 행
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _infoCol(Icons.route, '거리',
+                          distKm != null ? '${distKm.toStringAsFixed(1)}km' : '-'),
+                      _divider(),
+                      _infoCol(Icons.schedule, '예상 시간',
+                          etaMin != null ? '약 ${etaMin}분' : '-'),
+                      _divider(),
+                      _infoCol(Icons.payments, '배달료', '3,500원',
+                          valueColor: Colors.green.shade700),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // 주문 메뉴
+                Text('주문 내역',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade600)),
+                const SizedBox(height: 6),
+                ...order.items.map((item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Row(
+                        children: [
+                          const Text('• ', style: TextStyle(color: Colors.grey)),
+                          Text('${item.name} ',
+                              style: TextStyle(
+                                  fontSize: 13, color: Colors.grey.shade700)),
+                          Text('${item.quantity}개',
+                              style: TextStyle(
+                                  fontSize: 13, color: Colors.grey.shade500)),
+                        ],
+                      ),
+                    )),
+                const SizedBox(height: 6),
+
+                // 배달 주소
+                Row(
+                  children: [
+                    Icon(Icons.location_on,
+                        size: 14, color: Colors.grey.shade400),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(order.deliveryAddress,
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey.shade500),
+                          maxLines: 2),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // 수락 / 거절 버튼
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red.shade400,
+                          side: BorderSide(color: Colors.red.shade300),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: widget.onReject,
+                        child: const Text('거절',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 15)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green.shade600,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: widget.onAccept,
+                        child: const Text('배달 수락 🚴',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 15)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+          SizedBox(height: MediaQuery.of(context).padding.bottom),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoCol(IconData icon, String label, String value,
+      {Color? valueColor}) {
+    return Column(
+      children: [
+        Icon(icon, size: 18, color: Colors.green.shade600),
+        const SizedBox(height: 4),
+        Text(label,
+            style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
+        const SizedBox(height: 2),
+        Text(value,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: valueColor ?? Colors.grey.shade800)),
+      ],
+    );
+  }
+
+  Widget _divider() =>
+      Container(width: 1, height: 36, color: Colors.green.shade100);
+}
+
+// ── 내 배달 카드 (경로 지도 포함) ─────────────────────────────────────────────
+class _MyOrderCard extends StatefulWidget {
   final OrderModel order;
   final VoidCallback onPickup;
   final VoidCallback onComplete;
@@ -298,11 +661,45 @@ class _MyOrderCard extends StatelessWidget {
       {required this.order, required this.onPickup, required this.onComplete});
 
   @override
+  State<_MyOrderCard> createState() => _MyOrderCardState();
+}
+
+class _MyOrderCardState extends State<_MyOrderCard> {
+  List<LatLng> _route = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRoute();
+  }
+
+  Future<void> _loadRoute() async {
+    final o = widget.order;
+    if (o.riderLat == null || o.riderLng == null || o.deliveryLat == 0) return;
+    final route = await RoutingService.getRoute(
+      LatLng(o.riderLat!, o.riderLng!),
+      LatLng(o.deliveryLat, o.deliveryLng),
+    );
+    if (mounted) setState(() => _route = route);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final order = widget.order;
     final isAssigned = order.status == 'assigned';
     final isPickedUp = order.status == 'picked_up';
-    final hasRiderPos =
-        order.riderLat != null && order.riderLng != null;
+    final hasRiderPos = order.riderLat != null && order.riderLng != null;
+
+    // 남은 거리
+    double? distKm;
+    int? etaMin;
+    if (hasRiderPos && order.deliveryLat != 0) {
+      distKm = RoutingService.distanceKm(
+        LatLng(order.riderLat!, order.riderLng!),
+        LatLng(order.deliveryLat, order.deliveryLng),
+      );
+      etaMin = RoutingService.estimatedMinutes(distKm);
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -311,18 +708,18 @@ class _MyOrderCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 지도
+          // 지도 (경로 포함)
           if (hasRiderPos)
             ClipRRect(
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(14)),
               child: SizedBox(
-                height: 180,
+                height: 200,
                 child: FlutterMap(
                   options: MapOptions(
                     initialCenter:
                         LatLng(order.riderLat!, order.riderLng!),
-                    initialZoom: 15,
+                    initialZoom: 14,
                   ),
                   children: [
                     TileLayer(
@@ -330,18 +727,26 @@ class _MyOrderCard extends StatelessWidget {
                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'com.delivery.rider',
                     ),
+                    // 경로 폴리라인
+                    if (_route.isNotEmpty)
+                      PolylineLayer(polylines: [
+                        Polyline(
+                          points: _route,
+                          color: Colors.blue.shade600,
+                          strokeWidth: 4,
+                        ),
+                      ]),
                     MarkerLayer(markers: [
-                      // 라이더 위치
+                      // 라이더
                       Marker(
                         point: LatLng(order.riderLat!, order.riderLng!),
                         child: const Icon(Icons.delivery_dining,
                             color: Colors.green, size: 32),
                       ),
-                      // 배달지 위치
+                      // 배달지
                       if (order.deliveryLat != 0 && order.deliveryLng != 0)
                         Marker(
-                          point: LatLng(
-                              order.deliveryLat, order.deliveryLng),
+                          point: LatLng(order.deliveryLat, order.deliveryLng),
                           child: const Icon(Icons.location_on,
                               color: Colors.red, size: 32),
                         ),
@@ -361,7 +766,8 @@ class _MyOrderCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.store, size: 16, color: Colors.green.shade600),
+                        Icon(Icons.store,
+                            size: 16, color: Colors.green.shade600),
                         const SizedBox(width: 6),
                         Text(order.storeName,
                             style: const TextStyle(
@@ -380,8 +786,7 @@ class _MyOrderCard extends StatelessWidget {
                       child: Text(
                         isPickedUp ? '픽업 완료' : '픽업 대기',
                         style: TextStyle(
-                          color:
-                              isPickedUp ? Colors.teal : Colors.orange,
+                          color: isPickedUp ? Colors.teal : Colors.orange,
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
                         ),
@@ -389,6 +794,33 @@ class _MyOrderCard extends StatelessWidget {
                     ),
                   ],
                 ),
+
+                // 거리 / 예상 도착 시간
+                if (distKm != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.route,
+                            size: 14, color: Colors.blue.shade600),
+                        const SizedBox(width: 4),
+                        Text(
+                          '배달지까지 ${distKm.toStringAsFixed(1)}km · 약 ${etaMin}분',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.blue.shade700),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 10),
 
                 // 진행 상태 바
@@ -430,16 +862,15 @@ class _MyOrderCard extends StatelessWidget {
                   height: 44,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isPickedUp
-                          ? Colors.green.shade600
-                          : Colors.orange,
+                      backgroundColor:
+                          isPickedUp ? Colors.green.shade600 : Colors.orange,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
                     onPressed: isAssigned
-                        ? onPickup
-                        : (isPickedUp ? onComplete : null),
+                        ? widget.onPickup
+                        : (isPickedUp ? widget.onComplete : null),
                     child: Text(
                       isAssigned ? '🛵  픽업 완료' : '🎉  배달 완료',
                       style: const TextStyle(
@@ -475,9 +906,8 @@ class _MyOrderCard extends StatelessWidget {
         Text(label,
             style: TextStyle(
                 fontSize: 10,
-                color: active
-                    ? Colors.green.shade600
-                    : Colors.grey.shade400)),
+                color:
+                    active ? Colors.green.shade600 : Colors.grey.shade400)),
       ],
     );
   }
@@ -500,6 +930,3 @@ String _timeStr(DateTime dt) {
   if (diff.inMinutes < 60) return '${diff.inMinutes}분 전';
   return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 }
-
-String _fmt(int n) => n.toString().replaceAllMapped(
-    RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
