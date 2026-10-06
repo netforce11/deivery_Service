@@ -11,9 +11,22 @@
  */
 
 const admin = require('firebase-admin');
+const fs = require('fs');
+const path = require('path');
 
-// Firebase 프로젝트 초기화 (firebase CLI 로그인 상태에서 자동 인증)
+// 서비스 계정 키 파일 자동 탐색
+const keyPath = path.join(__dirname, 'serviceAccountKey.json');
+if (!fs.existsSync(keyPath)) {
+  console.error('❌ serviceAccountKey.json 파일이 없습니다.');
+  console.error('   Firebase Console → 프로젝트 설정 → 서비스 계정 → 새 비공개 키 생성');
+  console.error(`   다운로드한 파일을 ${keyPath} 로 저장하세요.`);
+  process.exit(1);
+}
+
+const serviceAccount = require(keyPath);
+
 admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
   projectId: 'delivery-service-98dfc',
 });
 
