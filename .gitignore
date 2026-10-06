@@ -1,0 +1,31 @@
+# ── 보안 파일 (절대 커밋 금지) ───────────────────────────────────────────────
+scripts/serviceAccountKey.json
+scripts/*.json
+**/.env
+**/.env.*
+**/google-services.json
+**/GoogleService-Info.plist
+
+# ── Firebase ─────────────────────────────────────────────────────────────────
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# ── Flutter / Dart ────────────────────────────────────────────────────────────
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/*.g.dart
+**/*.freezed.dart
+
+# ── Node (functions) ─────────────────────────────────────────────────────────
+functions/node_modules/
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store

@@ -2,27 +2,149 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 가게: 누구나 읽기, 오너만 수정
+    // ── 헬퍼 함수 ─────────────────────────────────────────────────────────────
+    function isSignedIn()  { return request.auth != null; }
+    function isAdmin()     { return isSignedIn() && request.auth.token.role == 'admin'; }
+    function isOwner(uid)  { return isSignedIn() && request.auth.uid == uid; }
+
+    // ── 가게 ──────────────────────────────────────────────────────────────────
+    // 읽기: 로그인한 모든 사용자
+    // 쓰기: 가게 오너 본인 또는 관리자
     match /stores/{storeId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == resource.data.ownerId;
-      allow create: if request.auth != null;
+      allow read:   if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin()
+                            || (isSignedIn() && request.auth.uid == resource.data.ownerId);
     }
 
-    // 메뉴: 누구나 읽기, 인증된 사용자 수정
+    // ── 메뉴 ──────────────────────────────────────────────────────────────────
     match /menus/{menuId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read:   if isSignedIn();
+      allow write:  if isAdmin()
+                    || (isSignedIn()
+                        && request.auth.uid == get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.ownerId);
     }
 
-    // 주문: 인증된 사용자 모두 접근
+    // ── 주문 ──────────────────────────────────────────────────────────────────
+    // 읽기: 본인 주문(customerId 또는 riderId) 또는 관리자
+    // 쓰기: 본인 고객 / 라이더 / 관리자
+    // isRyanCall 필드는 Cloud Functions만 쓸 수 있도록 클라이언트 쓰기 차단
     match /orders/{orderId} {
-      allow read, write: if request.auth != null;
+      allow read: if isSignedIn()
+                  && (isAdmin()
+                      || request.auth.uid == resource.data.customerId
+                      || request.auth.uid == resource.data.riderId
+                      || request.auth.uid == get(/databases/$(database)/documents/stores/$(resource.data.storeId)).data.ownerId);
+      allow create: if isSignedIn();
+      allow update: if isSignedIn()
+                    && (isAdmin()
+                        || request.auth.uid == resource.data.customerId
+                        || request.auth.uid == resource.data.riderId)
+                    // 클라이언트에서 isRyanCall 직접 쓰기 금지 (Cloud Functions만 가능)
+                    && !('isRyanCall' in request.resource.data.diff(resource.data).affectedKeys());
     }
 
-    // 라이더: 본인만 읽기/쓰기
+    // ── 라이더 ────────────────────────────────────────────────────────────────
     match /riders/{riderId} {
-      allow read, write: if request.auth != null;
+      allow read:   if isSignedIn()
+                    && (isAdmin() || isOwner(riderId));
+      allow write:  if isAdmin() || isOwner(riderId);
+    }
+
+    // ── 라이더 포인트 ─────────────────────────────────────────────────────────
+    // 읽기: 본인 + 관리자
+    // 쓰기: 관리자만 (포인트는 Cloud Functions로만 적립)
+    match /riderPoints/{riderId} {
+      allow read:  if isAdmin() || isOwner(riderId);
+      allow write: if isAdmin();
+    }
+
+    // ── 부스터 마켓 ───────────────────────────────────────────────────────────
+    // 읽기: 로그인한 모든 라이더
+    // 쓰기: 관리자만 (Cloud Functions listBoosterForSale 경유)
+    match /boosterMarket/{listingId} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── 대회 ──────────────────────────────────────────────────────────────────
+    match /riderCompetitions/{competitionId} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /riderCompetitionEntries/{entryId} {
+      allow read:  if isSignedIn();
+      // 클라이언트에서 직접 쓰되 본인 데이터만 — 서버 검증은 Security Rules로
+      allow create, update: if isSignedIn()
+                            && request.resource.data.riderId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // ── 라이언 일병 구하기 캠페인 ─────────────────────────────────────────────
+    // 캠페인 목록: 라이더 앱에서도 읽어야 하므로 로그인 사용자 전체 허용
+    // 익명 캠페인의 injuredRiderName 은 관리자만 읽도록 (필드레벨 제어는 Rules로 불가 —
+    //   대신 클라이언트에서 isAnonymous 체크, 서버는 최소 권한으로 운영)
+    match /riderAidCampaigns/{campaignId} {
+      allow read:   if isSignedIn();
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+                    // Cloud Functions의 status 자동완료 허용 — service account는 Rules 적용 X
+                    || (isSignedIn()
+                        // 라이더는 currentAmount/participantCount 수정 불가 (Cloud Functions 전용)
+                        && !request.resource.data.diff(resource.data)
+                              .affectedKeys()
+                              .hasAny(['currentAmount','companyMatchAmount',
+                                       'participantCount','status','isPaidOut']));
+      allow delete: if isAdmin();
+    }
+
+    // ── 라이언 콜 참여 기록 ────────────────────────────────────────────────────
+    // 쓰기: Cloud Functions(service account)만 — 클라이언트 직접 쓰기 차단
+    match /riderAidContributions/{docId} {
+      allow read:  if isAdmin()
+                   || (isSignedIn() && resource.data.riderId == request.auth.uid);
+      allow write: if isAdmin(); // Cloud Functions는 service account → 이 룰 우회
+    }
+
+    // ── 라이언 콜 발송 이벤트 ─────────────────────────────────────────────────
+    match /ryanCallDispatches/{docId} {
+      allow read:  if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ── 전우 지원금 정산 ──────────────────────────────────────────────────────
+    match /riderAidPayouts/{docId} {
+      allow read:  if isAdmin()
+                   || (isSignedIn() && resource.data.riderId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // ── 플랫폼 수수료 기록 ────────────────────────────────────────────────────
+    match /platformFees/{docId} {
+      allow read:  if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ── 슈퍼라이더 보너스 ─────────────────────────────────────────────────────
+    match /superRiderBonus/{docId} {
+      allow read:  if isAdmin()
+                   || (isSignedIn() && resource.data.riderId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // ── 가게 정산 큐 ──────────────────────────────────────────────────────────
+    match /storeBonusQueue/{docId} {
+      allow read:  if isAdmin()
+                   || (isSignedIn()
+                       && resource.data.storeOwnerId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // ── 고객 ──────────────────────────────────────────────────────────────────
+    match /customers/{customerId} {
+      allow read:  if isAdmin() || isOwner(customerId);
+      allow write: if isAdmin() || isOwner(customerId);
     }
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 // ── 상수 / 헬퍼 ───────────────────────────────────────────────────────────────
 
@@ -304,6 +305,27 @@ class _CampaignDetail extends StatelessWidget {
                       const SizedBox(width: 8),
                       // 상태 변경 버튼
                       if (isActive) ...[
+                        // 라이언 콜 발송
+                        ElevatedButton.icon(
+                          onPressed: () => showDialog(
+                            context: context,
+                            builder: (_) => _DispatchDialog(
+                              db: db,
+                              campaignId: campaignId,
+                              campaignName: name,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF7B1FA2),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                          ),
+                          icon: const Icon(Icons.campaign, size: 15),
+                          label: const Text('라이언 콜 발송',
+                              style: TextStyle(fontSize: 12)),
+                        ),
+                        const SizedBox(width: 6),
                         _actionBtn('완료', Colors.green, () async {
                           await db
                               .collection('riderAidCampaigns')
@@ -388,14 +410,47 @@ class _CampaignDetail extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            // ── 참여 기록 ────────────────────────────────────────────────
-            const Text('참여 기록',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14)),
-            const SizedBox(height: 10),
-            Expanded(child: _ContributionList(db: db, campaignId: campaignId)),
+            // ── 발송 이력 + 참여 기록 ────────────────────────────────────
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 라이언 콜 발송 이력
+                Expanded(
+                  flex: 2,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('발송 이력',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14)),
+                      const SizedBox(height: 10),
+                      SizedBox(height: 280,
+                          child: _DispatchHistory(db: db, campaignId: campaignId)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // 참여 기록
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('참여 기록',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14)),
+                      const SizedBox(height: 10),
+                      SizedBox(height: 280,
+                          child: _ContributionList(db: db, campaignId: campaignId)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ],
         );
       },
@@ -718,6 +773,302 @@ class _PayoutDialogState extends State<_PayoutDialog> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+}
+
+// ── 라이언 콜 발송 다이얼로그 ─────────────────────────────────────────────────
+
+class _DispatchDialog extends StatefulWidget {
+  final FirebaseFirestore db;
+  final String campaignId;
+  final String campaignName;
+
+  const _DispatchDialog({
+    required this.db,
+    required this.campaignId,
+    required this.campaignName,
+  });
+
+  @override
+  State<_DispatchDialog> createState() => _DispatchDialogState();
+}
+
+class _DispatchDialogState extends State<_DispatchDialog> {
+  final _messageCtrl = TextEditingController(
+      text: '🪖 전우가 부상으로 어려움에 처했습니다. 지금 배달 완료 시 수익의 50%가 기부됩니다. 함께 힘을 내주세요!');
+  bool _sending = false;
+  String? _resultMsg;
+  bool _success = false;
+
+  @override
+  void dispose() {
+    _messageCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF161B22),
+      title: const Row(
+        children: [
+          Icon(Icons.campaign, color: Color(0xFF9C27B0), size: 20),
+          SizedBox(width: 10),
+          Text('라이언 콜 발송',
+              style: TextStyle(color: Colors.white, fontSize: 16)),
+        ],
+      ),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 캠페인 정보
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF7B1FA2).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: const Color(0xFF9C27B0).withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Text('캠페인',
+                      style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(widget.campaignName,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            // 발송 메시지
+            Text('FCM 메시지 내용',
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _messageCtrl,
+              maxLines: 3,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: const Color(0xFF0D1117),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.grey.shade800)),
+                enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.grey.shade800)),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide:
+                        const BorderSide(color: Color(0xFF9C27B0))),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // 안내
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.2)),
+              ),
+              child: const Text(
+                '📱 현재 온라인 상태인 라이더 전체에게 FCM 푸시 알림이 발송됩니다.\n'
+                '라이더가 수락 시 다음 배달 완료 건이 라이언 콜로 처리됩니다.',
+                style: TextStyle(color: Colors.blue, fontSize: 11),
+              ),
+            ),
+            // 결과 메시지
+            if (_resultMsg != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: (_success ? Colors.green : Colors.red)
+                      .withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: (_success ? Colors.green : Colors.red)
+                          .withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                        _success
+                            ? Icons.check_circle
+                            : Icons.error_outline,
+                        color: _success ? Colors.green : Colors.red,
+                        size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(_resultMsg!,
+                          style: TextStyle(
+                              color: _success ? Colors.green : Colors.red,
+                              fontSize: 12)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(_success ? '닫기' : '취소')),
+        if (!_success)
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7B1FA2)),
+            onPressed: _sending ? null : _dispatch,
+            icon: _sending
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.send, size: 16),
+            label: Text(_sending ? '발송 중...' : '라이언 콜 발송',
+                style: const TextStyle(color: Colors.white)),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _dispatch() async {
+    final msg = _messageCtrl.text.trim();
+    if (msg.isEmpty) return;
+    setState(() { _sending = true; _resultMsg = null; });
+
+    try {
+      final fn = FirebaseFunctions.instanceFor(region: 'asia-northeast3');
+      final result = await fn
+          .httpsCallable('dispatchRyanCall')
+          .call({
+        'campaignId': widget.campaignId,
+        'message': msg,
+      });
+
+      final data = result.data as Map<String, dynamic>;
+      final count = data['successCount'] ?? 0;
+      setState(() {
+        _success = true;
+        _resultMsg = '✅ $count명의 온라인 라이더에게 발송 완료!';
+      });
+    } on FirebaseFunctionsException catch (e) {
+      setState(() {
+        _success = false;
+        _resultMsg = '❌ 발송 실패: ${e.message}';
+      });
+    } catch (e) {
+      setState(() {
+        _success = false;
+        _resultMsg = '❌ 오류: $e';
+      });
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+}
+
+// ── 라이언 콜 발송 이력 ────────────────────────────────────────────────────────
+
+class _DispatchHistory extends StatelessWidget {
+  final FirebaseFirestore db;
+  final String campaignId;
+  const _DispatchHistory({required this.db, required this.campaignId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF161B22),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF9C27B0).withOpacity(0.2)),
+      ),
+      child: StreamBuilder<QuerySnapshot>(
+        stream: db
+            .collection('ryanCallDispatches')
+            .where('campaignId', isEqualTo: campaignId)
+            .orderBy('createdAt', descending: true)
+            .limit(20)
+            .snapshots(),
+        builder: (_, snap) {
+          if (!snap.hasData) {
+            return const Center(
+                child: CircularProgressIndicator(color: Color(0xFF9C27B0)));
+          }
+          final docs = snap.data!.docs;
+          if (docs.isEmpty) {
+            return const Center(
+                child: Padding(
+              padding: EdgeInsets.all(20),
+              child: Text('발송 이력 없음',
+                  style: TextStyle(color: Colors.grey, fontSize: 12)),
+            ));
+          }
+          return ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            itemCount: docs.length,
+            itemBuilder: (_, i) {
+              final data = docs[i].data() as Map<String, dynamic>;
+              final ts = (data['createdAt'] as Timestamp?)?.toDate();
+              final time = ts != null
+                  ? '${ts.month}/${ts.day} '
+                    '${ts.hour.toString().padLeft(2, '0')}:'
+                    '${ts.minute.toString().padLeft(2, '0')}'
+                  : '-';
+              final count = (data['successCount'] ?? 0).toInt();
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border(
+                      bottom: BorderSide(
+                          color: Colors.grey.shade900, width: 0.5)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.campaign,
+                        color: Color(0xFF9C27B0), size: 14),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(time,
+                          style: TextStyle(
+                              color: Colors.grey.shade400, fontSize: 11)),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF7B1FA2).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text('$count명',
+                          style: const TextStyle(
+                              color: Color(0xFFCE93D8),
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
   }
 }
 

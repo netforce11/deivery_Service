@@ -10,7 +10,6 @@ class SettlementScreen extends StatefulWidget {
 
 class _SettlementScreenState extends State<SettlementScreen> {
   final _db = FirebaseFirestore.instance;
-  bool _paying = false;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +30,7 @@ class _SettlementScreenState extends State<SettlementScreen> {
           const SizedBox(height: 24),
 
           // 정산 대기 큐 전체
-          _BonusQueueSection(db: _db, onPaying: (v) => setState(() => _paying = v)),
+          _BonusQueueSection(db: _db),
           const SizedBox(height: 24),
 
           // 전우 지원금 정산
@@ -159,8 +158,7 @@ class _MonthlySummary extends StatelessWidget {
 // ── 정산 대기 큐 ─────────────────────────────────────────────────────────────
 class _BonusQueueSection extends StatelessWidget {
   final FirebaseFirestore db;
-  final ValueChanged<bool> onPaying;
-  const _BonusQueueSection({required this.db, required this.onPaying});
+  const _BonusQueueSection({required this.db});
 
   @override
   Widget build(BuildContext context) {

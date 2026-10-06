@@ -17,11 +17,15 @@ class BoosterMarketService {
 
   // ── 판매 등록 ──────────────────────────────────────────────────────────────
 
+  /// 부스터 가격 범위 상수
+  static const int minPrice = 10;
+  static const int maxPrice = 90;
+
   /// 내 부스터를 마켓에 등록
-  /// [price]: 포인트 판매가 (최소 10점, 최대 90점 권장)
+  /// [price]: 포인트 판매가 (최소 10점, 최대 90점)
   Future<BoosterMarketResult> listForSale({required int price}) async {
     if (_uid == null) return BoosterMarketResult.notLoggedIn;
-    if (price < 10) return BoosterMarketResult.invalidPrice;
+    if (price < minPrice || price > maxPrice) return BoosterMarketResult.invalidPrice;
 
     final snap = await _points.doc(_uid).get();
     if (!snap.exists) return BoosterMarketResult.noBooster;
@@ -246,7 +250,7 @@ extension BoosterMarketResultExt on BoosterMarketResult {
       case BoosterMarketResult.insufficientPoints:  return '포인트가 부족합니다.';
       case BoosterMarketResult.monthlyLimitReached: return '이번 달 구매 한도(2회)에 도달했습니다.';
       case BoosterMarketResult.notOwner:            return '취소 권한이 없습니다.';
-      case BoosterMarketResult.invalidPrice:        return '최소 10포인트 이상으로 설정해주세요.';
+      case BoosterMarketResult.invalidPrice:        return '판매가는 10포인트 이상 90포인트 이하로 설정해주세요.';
     }
   }
 

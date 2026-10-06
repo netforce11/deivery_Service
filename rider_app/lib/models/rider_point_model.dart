@@ -11,7 +11,7 @@ enum PointReason {
   peakTime5,                 // 피크타임 연속 5건 +1
   sevenDayStreak,            // 7일 연속 출근 +3
   newAreaDelivery,           // 신규 배달지역 +1
-  ryanCall,                  // 라이언 일병 구하기 콜 참여 +5
+  ryanCall,                  // 라이언 일병 구하기 콜 참여 +7
 }
 
 extension PointReasonExt on PointReason {
@@ -171,8 +171,11 @@ class RiderPointModel {
     return 150 - totalPoints;
   }
 
-  /// 다음 부스터 충전까지 필요 포인트
-  int get pointsToNextBooster => 100 - (totalPoints % 100);
+  /// 다음 부스터 충전까지 필요 포인트 (이미 100의 배수이면 0 반환)
+  int get pointsToNextBooster {
+    final rem = totalPoints % 100;
+    return rem == 0 ? 0 : 100 - rem;
+  }
 
   // ── 직렬화 ──────────────────────────────────────────────────────────────────
 
