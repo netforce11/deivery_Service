@@ -34,6 +34,10 @@ class _SettlementScreenState extends State<SettlementScreen> {
           _BonusQueueSection(db: _db, onPaying: (v) => setState(() => _paying = v)),
           const SizedBox(height: 24),
 
+          // 전우 지원금 정산
+          _AidPayoutSection(db: _db),
+          const SizedBox(height: 24),
+
           // 슈퍼라이더 보너스 (MVP: 수동 선정)
           _SuperRiderBonusSection(db: _db),
         ],
@@ -326,6 +330,244 @@ class _BonusQueueSection extends StatelessWidget {
       });
     }
     await batch.commit();
+  }
+}
+
+// ── 전우 지원금 정산 ───────────────────────────────────────────────────────────
+
+class _AidPayoutSection extends StatelessWidget {
+  final FirebaseFirestore db;
+  const _AidPayoutSection({required this.db});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161B22),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.teal.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🪖', style: TextStyle(fontSize: 18)),
+              const SizedBox(width: 8),
+              const Text('전우 지원금 정산',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15)),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text('라이언 일병 구하기',
+                    style: TextStyle(color: Colors.teal, fontSize: 11)),
+              ),
+              const Spacer(),
+              // 일괄 지급 버튼
+              StreamBuilder<QuerySnapshot>(
+                stream: db
+                    .collection('riderAidPayouts')
+                    .where('status', isEqualTo: 'pending')
+                    .snapshots(),
+                builder: (_, snap) {
+                  final count = snap.data?.size ?? 0;
+                  if (count == 0) return const SizedBox.shrink();
+                  return ElevatedButton.icon(
+                    onPressed: () =>
+                        _payAll(context, snap.data!.docs),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal.shade800,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                    ),
+                    icon: const Icon(Icons.volunteer_activism, size: 16),
+                    label: Text('전체 지급 ($count건)'),
+                  );
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<QuerySnapshot>(
+            stream: db
+                .collection('riderAidPayouts')
+                .orderBy('createdAt', descending: true)
+                .limit(20)
+                .snapshots(),
+            builder: (_, snap) {
+              if (!snap.hasData) {
+                return const CircularProgressIndicator(
+                    color: Color(0xFF5C6BC0));
+              }
+              final docs = snap.data!.docs;
+              if (docs.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text('지원금 정산 대기 없음',
+                      style: TextStyle(color: Colors.grey.shade600)),
+                );
+              }
+              return Column(
+                children: docs.map((d) {
+                  final data = d.data() as Map<String, dynamic>;
+                  final isPaid = data['status'] == 'paid';
+                  final amount = (data['amount'] ?? 0).toInt();
+                  final ts =
+                      (data['createdAt'] as Timestamp?)?.toDate();
+                  final dateStr = ts != null
+                      ? '${ts.month}/${ts.day} '
+                        '${ts.hour.toString().padLeft(2, '0')}:'
+                        '${ts.minute.toString().padLeft(2, '0')}'
+                      : '-';
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D1117),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        const Text('🪖 ',
+                            style: TextStyle(fontSize: 16)),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                data['riderName'] as String? ?? d.id,
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 13),
+                              ),
+                              Text(
+                                data['memo'] as String? ?? '',
+                                style: TextStyle(
+                                    color: Colors.grey.shade500,
+                                    fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(dateStr,
+                            style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 11)),
+                        const SizedBox(width: 16),
+                        Text('${_fmt(amount)}원',
+                            style: TextStyle(
+                                color:
+                                    isPaid ? Colors.grey : Colors.teal,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15)),
+                        const SizedBox(width: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: (isPaid ? Colors.grey : Colors.teal)
+                                .withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(isPaid ? '지급완료' : '대기중',
+                              style: TextStyle(
+                                  color: isPaid
+                                      ? Colors.grey
+                                      : Colors.teal,
+                                  fontSize: 11)),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _payAll(
+      BuildContext context, List<QueryDocumentSnapshot> docs) async {
+    final pending = docs
+        .where((d) =>
+            (d.data() as Map<String, dynamic>)['status'] == 'pending')
+        .toList();
+    if (pending.isEmpty) return;
+
+    final totalAmount = pending.fold<int>(
+        0,
+        (sum, d) =>
+            sum +
+            ((d.data() as Map<String, dynamic>)['amount'] as num? ?? 0)
+                .toInt());
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF161B22),
+        title: const Text('전우 지원금 지급',
+            style: TextStyle(color: Colors.white)),
+        content: Text(
+            '${pending.length}명에게 총 ${_fmt(totalAmount)}원을 지급 처리하겠습니까?\n\n'
+            '실제 계좌 이체는 별도로 진행해 주세요.',
+            style: const TextStyle(color: Colors.grey)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('지급 처리',
+                  style: TextStyle(color: Colors.teal))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final batch = db.batch();
+    final now = FieldValue.serverTimestamp();
+
+    for (final d in pending) {
+      // 지원금 지급 상태 업데이트
+      batch.update(d.reference, {
+        'status': 'paid',
+        'paidAt': now,
+      });
+
+      // 캠페인 isPaidOut 플래그 업데이트
+      final campaignId = (d.data() as Map<String, dynamic>)['campaignId']
+          as String?;
+      if (campaignId != null) {
+        batch.update(
+          db.collection('riderAidCampaigns').doc(campaignId),
+          {'isPaidOut': true},
+        );
+      }
+    }
+    await batch.commit();
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              '🪖 ${pending.length}명 / ${_fmt(totalAmount)}원 지급 처리 완료'),
+          backgroundColor: Colors.teal.shade700,
+        ),
+      );
+    }
   }
 }
 
