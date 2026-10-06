@@ -5,6 +5,7 @@ import '../orders/order_management_screen.dart';
 import '../management/store_rider_management_screen.dart';
 import '../settlement/settlement_screen.dart';
 import '../competition/competition_management_screen.dart';
+import '../aid/rider_aid_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -27,6 +28,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         activeIcon: Icons.account_balance, label: '정산'),
     _NavItem(icon: Icons.emoji_events_outlined,
         activeIcon: Icons.emoji_events, label: '대회'),
+    _NavItem(icon: Icons.volunteer_activism_outlined,
+        activeIcon: Icons.volunteer_activism, label: '전우지원'),
   ];
 
   final List<Widget> _screens = [
@@ -35,6 +38,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     const StoreRiderManagementScreen(),
     const SettlementScreen(),
     const CompetitionManagementScreen(),
+    const RiderAidScreen(),
   ];
 
   @override

@@ -11,6 +11,7 @@ enum PointReason {
   peakTime5,                 // 피크타임 연속 5건 +1
   sevenDayStreak,            // 7일 연속 출근 +3
   newAreaDelivery,           // 신규 배달지역 +1
+  ryanCall,                  // 라이언 일병 구하기 콜 참여 +5
 }
 
 extension PointReasonExt on PointReason {
@@ -25,6 +26,7 @@ extension PointReasonExt on PointReason {
       case PointReason.peakTime5:                return '피크타임 연속 5건';
       case PointReason.sevenDayStreak:           return '7일 연속 출근';
       case PointReason.newAreaDelivery:          return '신규 지역 배달';
+      case PointReason.ryanCall:                 return '🪖 라이언 일병 구하기 참여';
     }
   }
 
@@ -39,6 +41,7 @@ extension PointReasonExt on PointReason {
       case PointReason.peakTime5:                return 1;
       case PointReason.sevenDayStreak:           return 3;
       case PointReason.newAreaDelivery:          return 1;
+      case PointReason.ryanCall:                 return 7;
     }
   }
 }
