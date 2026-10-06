@@ -23,11 +23,17 @@ if (!fs.existsSync(keyPath)) {
   process.exit(1);
 }
 
-const serviceAccount = require(keyPath);
+let serviceAccount;
+try {
+  serviceAccount = require(keyPath);
+  console.log(`  🔑 키 로드 성공: ${serviceAccount.client_email}`);
+} catch (e) {
+  console.error('❌ 키 파일 파싱 실패:', e.message);
+  process.exit(1);
+}
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  projectId: 'delivery-service-98dfc',
 });
 
 const auth = admin.auth();
