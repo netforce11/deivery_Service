@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../models/order_model.dart';
 import '../../providers/cart_provider.dart';
 import '../../services/store_service.dart';
+import '../../services/geocoding_service.dart';
+import '../address/address_search_screen.dart';
 
 class OrderScreen extends StatefulWidget {
   const OrderScreen({super.key});
@@ -13,20 +15,24 @@ class OrderScreen extends StatefulWidget {
 }
 
 class _OrderScreenState extends State<OrderScreen> {
-  final _addressCtrl = TextEditingController();
   final _storeService = StoreService();
+  AddressResult? _selectedAddress;
   bool _submitting = false;
 
-  @override
-  void dispose() {
-    _addressCtrl.dispose();
-    super.dispose();
+  Future<void> _openAddressSearch() async {
+    final result = await Navigator.push<AddressResult>(
+      context,
+      MaterialPageRoute(builder: (_) => const AddressSearchScreen()),
+    );
+    if (result != null) {
+      setState(() => _selectedAddress = result);
+    }
   }
 
   Future<void> _placeOrder() async {
-    if (_addressCtrl.text.trim().isEmpty) {
+    if (_selectedAddress == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('배달 주소를 입력해주세요'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('배달 주소를 선택해주세요'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -58,9 +64,9 @@ class _OrderScreenState extends State<OrderScreen> {
         platformFee: platformFee,
         deliveryFee: 3500,
         riderPay: 3500,
-        deliveryAddress: _addressCtrl.text.trim(),
-        deliveryLat: 35.8175, // TODO: 실제 지오코딩
-        deliveryLng: 127.1084,
+        deliveryAddress: _selectedAddress!.shortName,
+        deliveryLat: _selectedAddress!.lat,
+        deliveryLng: _selectedAddress!.lng,
         status: 'pending',
         createdAt: DateTime.now(),
       );
@@ -109,23 +115,57 @@ class _OrderScreenState extends State<OrderScreen> {
             // 배달 주소 입력
             _sectionTitle('📍 배달 주소'),
             const SizedBox(height: 8),
-            TextField(
-              controller: _addressCtrl,
-              decoration: InputDecoration(
-                hintText: '배달받을 주소를 입력해주세요',
-                prefixIcon: const Icon(Icons.location_on, color: Colors.orange),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
+            GestureDetector(
+              onTap: _openAddressSearch,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+                  border: Border.all(
+                    color: _selectedAddress != null
+                        ? Colors.orange
+                        : Colors.transparent,
+                    width: 1.5,
+                  ),
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.orange),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Icon(Icons.location_on,
+                        color: _selectedAddress != null
+                            ? Colors.orange
+                            : Colors.grey.shade400),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _selectedAddress == null
+                          ? Text('배달받을 주소를 검색해주세요',
+                              style: TextStyle(
+                                  color: Colors.grey.shade400, fontSize: 14))
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _selectedAddress!.shortName,
+                                  style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _selectedAddress!.displayName,
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey.shade500),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                    ),
+                    Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                  ],
                 ),
               ),
-              maxLines: 2,
             ),
             const SizedBox(height: 24),
 
