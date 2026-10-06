@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../../models/order_model.dart';
@@ -8,6 +9,10 @@ import '../../services/order_service.dart';
 import '../../services/location_service.dart';
 import '../../services/routing_service.dart';
 import '../earnings/earnings_screen.dart';
+import '../points/rider_points_screen.dart';
+import '../day_end/day_end_screen.dart';
+import '../../models/rider_point_model.dart';
+import '../../services/rider_point_service.dart';
 
 class RiderDashboardScreen extends StatefulWidget {
   const RiderDashboardScreen({super.key});
@@ -70,7 +75,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         content: Text(
           _longDistanceOnly
               ? '장거리 전용 모드를 끄면 모든 배달 요청을 수신합니다.'
-              : '장거리 전용 모드를 켜면 7km 초과 배달 요청만 수신합니다.\n\n장거리 배달은 더 높은 배달비(8,000원~)를 제공합니다.',
+              : '장거리 전용 모드를 켜면 7km 초과 배달 요청만 수신합니다.\n\n거리와 지역에 따라 배달비가 자동 산정되며, 단거리보다 높은 수익을 기대할 수 있습니다.',
         ),
         actions: [
           TextButton(
@@ -95,6 +100,72 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         if (result) _filterIndex = 0; // 장거리 전용 모드 켜면 필터 초기화
       });
     }
+  }
+
+  Future<void> _showDayEndAndSignOut() async {
+    if (_riderId == null) {
+      _locationService.stopTracking();
+      _authService.signOut();
+      return;
+    }
+
+    // Firestore에서 오늘 수익 + 포인트 정보 수집
+    try {
+      final db = FirebaseFirestore.instance;
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+
+      // 오늘 완료된 배달 수익 합산
+      final ordersSnap = await db
+          .collection('orders')
+          .where('riderId', isEqualTo: _riderId)
+          .where('status', isEqualTo: 'delivered')
+          .get();
+
+      int todayEarnings = 0;
+      int completedOrders = 0;
+      for (final doc in ordersSnap.docs) {
+        final data = doc.data();
+        final deliveredAt = (data['deliveredAt'] as Timestamp?)?.toDate();
+        if (deliveredAt != null && deliveredAt.isAfter(todayStart)) {
+          todayEarnings += ((data['deliveryFee'] ?? 0) as num).toInt();
+          completedOrders++;
+        }
+      }
+
+      // 포인트 정보
+      final ptSnap = await db.collection('riderPoints').doc(_riderId).get();
+      RiderPointModel pts = RiderPointModel(riderId: _riderId!);
+      if (ptSnap.exists) {
+        pts = RiderPointModel.fromMap(
+            ptSnap.data() as Map<String, dynamic>, _riderId!);
+      }
+
+      if (!mounted) return;
+
+      // 배달 종료 화면 표시 후 로그아웃
+      await Navigator.of(context).push(
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => DayEndScreen(
+            todayEarnings: todayEarnings,
+            completedOrders: completedOrders,
+            todayPoints: pts.dailyPoints,
+            totalPoints: pts.totalPoints,
+            grade: pts.grade,
+            consecutiveDays: pts.consecutiveDays,
+            todayHistory: pts.todayHistory,
+            boosterCharges: pts.boosterCharges,
+          ),
+          transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+        ),
+      );
+    } catch (_) {
+      // 데이터 조회 실패해도 로그아웃은 진행
+    }
+
+    _locationService.stopTracking();
+    _authService.signOut();
   }
 
   @override
@@ -130,6 +201,50 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             tooltip: '장거리 전용 모드',
             onPressed: _showLongDistanceModeDialog,
           ),
+          // 포인트 버튼
+          StreamBuilder<RiderPointModel>(
+            stream: RiderPointService().watchPoints(),
+            builder: (context, snap) {
+              final pts = snap.data;
+              final boosting = pts?.isBoosterActive ?? false;
+              return Stack(
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      Icons.bolt,
+                      color: boosting ? Colors.amber : Colors.white,
+                    ),
+                    tooltip: '포인트 & 부스터',
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const RiderPointsScreen()),
+                    ),
+                  ),
+                  if (pts != null && pts.boosterCharges > 0 && !boosting)
+                    Positioned(
+                      right: 6, top: 6,
+                      child: Container(
+                        width: 16, height: 16,
+                        decoration: const BoxDecoration(
+                          color: Colors.amber,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${pts.boosterCharges}',
+                            style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.black,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.account_balance_wallet_outlined),
             tooltip: '수익 관리',
@@ -140,10 +255,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ),
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () {
-              _locationService.stopTracking();
-              _authService.signOut();
-            },
+            tooltip: '배달 종료',
+            onPressed: () => _showDayEndAndSignOut(),
           ),
         ],
         bottom: TabBar(
@@ -157,7 +270,15 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ],
         ),
       ),
-      body: TabBarView(
+      body: Column(
+        children: [
+          // 오늘/이번주 수익 요약 위젯
+          _TodayWeekSummary(riderId: _riderId ?? ''),
+          // 포인트 & 부스터 미니 배너
+          _PointMiniBar(onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const RiderPointsScreen()))),
+          Expanded(
+            child: TabBarView(
         controller: _tabController,
         children: [
           // 탭 1: 배달 가능한 주문
@@ -299,6 +420,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 ),
               );
             },
+          ),
+        ],
+            ),
           ),
         ],
       ),
@@ -1105,4 +1229,190 @@ String _timeStr(DateTime dt) {
   if (diff.inMinutes < 1) return '방금 전';
   if (diff.inMinutes < 60) return '${diff.inMinutes}분 전';
   return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+}
+
+// ── 포인트 미니 배너 ──────────────────────────────────────────────────────────
+class _PointMiniBar extends StatelessWidget {
+  final VoidCallback onTap;
+  const _PointMiniBar({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<RiderPointModel>(
+      stream: RiderPointService().watchPoints(),
+      builder: (context, snap) {
+        final p = snap.data;
+        if (p == null) return const SizedBox.shrink();
+
+        final boosting = p.isBoosterActive;
+        return GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 400),
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              gradient: boosting
+                  ? const LinearGradient(
+                      colors: [Color(0xFF2D2000), Color(0xFF1A1A00)],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    )
+                  : const LinearGradient(
+                      colors: [Color(0xFF1A2A1A), Color(0xFF0D1A0D)],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: boosting
+                    ? Colors.amber.withOpacity(0.6)
+                    : Colors.white12,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.bolt,
+                    color: boosting ? Colors.amber : Colors.white38,
+                    size: 18),
+                const SizedBox(width: 8),
+                if (boosting)
+                  const Text('⚡ 부스터 활성 중 — 근거리 콜 우선 배정',
+                      style: TextStyle(
+                          color: Colors.amber,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold))
+                else ...[
+                  Text('${p.totalPoints}점',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 6),
+                  Text('· ${p.grade} · 부스터 ${p.boosterCharges}회',
+                      style: const TextStyle(
+                          color: Colors.white38, fontSize: 12)),
+                ],
+                const Spacer(),
+                const Icon(Icons.chevron_right,
+                    color: Colors.white24, size: 16),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── 오늘/이번 주 수익 요약 위젯 ───────────────────────────────────────────────
+class _TodayWeekSummary extends StatelessWidget {
+  final String riderId;
+  const _TodayWeekSummary({required this.riderId});
+
+  @override
+  Widget build(BuildContext context) {
+    if (riderId.isEmpty) return const SizedBox.shrink();
+
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final weekday = now.weekday; // 1=월 ~ 7=일
+    final weekStart = todayStart.subtract(Duration(days: weekday - 1));
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('orders')
+          .where('riderId', isEqualTo: riderId)
+          .where('status', isEqualTo: 'delivered')
+          .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(weekStart))
+          .snapshots(),
+      builder: (context, snap) {
+        int todayEarning = 0;
+        int todayCount = 0;
+        int weekEarning = 0;
+        int weekCount = 0;
+
+        if (snap.hasData) {
+          for (final doc in snap.data!.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final pay = (data['riderPay'] ?? 0) as int;
+            final ts = data['createdAt'] as Timestamp?;
+            if (ts == null) continue;
+            final dt = ts.toDate();
+            weekEarning += pay;
+            weekCount++;
+            if (dt.isAfter(todayStart)) {
+              todayEarning += pay;
+              todayCount++;
+            }
+          }
+        }
+
+        return Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: _SummaryItem(
+                  label: '오늘',
+                  earning: todayEarning,
+                  count: todayCount,
+                  color: Colors.green.shade600,
+                  icon: Icons.today,
+                ),
+              ),
+              Container(width: 1, height: 36, color: Colors.grey.shade200),
+              Expanded(
+                child: _SummaryItem(
+                  label: '이번 주',
+                  earning: weekEarning,
+                  count: weekCount,
+                  color: Colors.teal.shade600,
+                  icon: Icons.date_range,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SummaryItem extends StatelessWidget {
+  final String label;
+  final int earning;
+  final int count;
+  final Color color;
+  final IconData icon;
+  const _SummaryItem({
+    required this.label,
+    required this.earning,
+    required this.count,
+    required this.color,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 6),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+            Text(
+              '${_fmtFee(earning)}원',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color),
+            ),
+            Text('$count건', style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
+          ],
+        ),
+      ],
+    );
+  }
 }

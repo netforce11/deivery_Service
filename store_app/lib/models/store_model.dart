@@ -13,6 +13,11 @@ class StoreModel {
   final String notice;           // 공지사항
   final int estimatedMinutes;    // 예상 조리시간 (분)
   final Map<String, Map<String, String>> businessHours; // 요일별 영업시간
+  // 날씨 할증 필드
+  final bool weatherSurchargeEnabled; // 날씨 할증 기능 허용 여부
+  final bool weatherSurchargeActive;  // 현재 할증 활성화 여부
+  final int weatherSurchargeAmount;   // 할증 금액 (원)
+  final DateTime? weatherSurchargeExpiry; // 할증 만료 시각
 
   StoreModel({
     required this.id,
@@ -28,6 +33,10 @@ class StoreModel {
     this.notice = '',
     this.estimatedMinutes = 30,
     this.businessHours = const {},
+    this.weatherSurchargeEnabled = false,
+    this.weatherSurchargeActive = false,
+    this.weatherSurchargeAmount = 1000,
+    this.weatherSurchargeExpiry,
   });
 
   factory StoreModel.fromMap(Map<String, dynamic> map, String id) {
@@ -56,6 +65,12 @@ class StoreModel {
       notice: map['notice'] ?? '',
       estimatedMinutes: (map['estimatedMinutes'] ?? 30).toInt(),
       businessHours: bh,
+      weatherSurchargeEnabled: map['weatherSurchargeEnabled'] ?? false,
+      weatherSurchargeActive: map['weatherSurchargeActive'] ?? false,
+      weatherSurchargeAmount: (map['weatherSurchargeAmount'] ?? 1000).toInt(),
+      weatherSurchargeExpiry: map['weatherSurchargeExpiry'] != null
+          ? (map['weatherSurchargeExpiry'] as dynamic).toDate()
+          : null,
     );
   }
 
@@ -73,6 +88,10 @@ class StoreModel {
       'notice': notice,
       'estimatedMinutes': estimatedMinutes,
       'businessHours': businessHours,
+      'weatherSurchargeEnabled': weatherSurchargeEnabled,
+      'weatherSurchargeActive': weatherSurchargeActive,
+      'weatherSurchargeAmount': weatherSurchargeAmount,
+      'weatherSurchargeExpiry': weatherSurchargeExpiry,
     };
   }
 
@@ -81,6 +100,11 @@ class StoreModel {
     String? notice,
     int? estimatedMinutes,
     Map<String, Map<String, String>>? businessHours,
+    bool? weatherSurchargeEnabled,
+    bool? weatherSurchargeActive,
+    int? weatherSurchargeAmount,
+    DateTime? weatherSurchargeExpiry,
+    bool clearExpiry = false,
   }) {
     return StoreModel(
       id: id,
@@ -96,6 +120,10 @@ class StoreModel {
       notice: notice ?? this.notice,
       estimatedMinutes: estimatedMinutes ?? this.estimatedMinutes,
       businessHours: businessHours ?? this.businessHours,
+      weatherSurchargeEnabled: weatherSurchargeEnabled ?? this.weatherSurchargeEnabled,
+      weatherSurchargeActive: weatherSurchargeActive ?? this.weatherSurchargeActive,
+      weatherSurchargeAmount: weatherSurchargeAmount ?? this.weatherSurchargeAmount,
+      weatherSurchargeExpiry: clearExpiry ? null : (weatherSurchargeExpiry ?? this.weatherSurchargeExpiry),
     );
   }
 }

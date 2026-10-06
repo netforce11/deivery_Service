@@ -28,7 +28,10 @@ class CartProvider extends ChangeNotifier {
       ? DeliveryFeeCalculator.calculate(_distanceKm!)
       : 3500;
 
-  int get total => subtotal + deliveryFee;
+  int get weatherSurcharge =>
+      (_store?.weatherSurchargeActive == true) ? (_store!.weatherSurchargeAmount) : 0;
+
+  int get total => subtotal + deliveryFee + weatherSurcharge;
 
   bool get isLongDistance =>
       _distanceKm != null && DeliveryFeeCalculator.isLongDistance(_distanceKm!);

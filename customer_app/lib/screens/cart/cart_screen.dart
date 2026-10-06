@@ -184,8 +184,50 @@ class _PriceSummary extends StatelessWidget {
           _row('음식 금액', '${_fmt(cart.subtotal)}원'),
           const SizedBox(height: 8),
           _row('배달비', '${_fmt(cart.deliveryFee)}원'),
+          if (cart.weatherSurcharge > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.umbrella_outlined,
+                        size: 14, color: Colors.blue),
+                    const SizedBox(width: 4),
+                    const Text('우천 할증',
+                        style: TextStyle(fontSize: 14, color: Colors.blue)),
+                  ],
+                ),
+                Text('+${_fmt(cart.weatherSurcharge)}원',
+                    style: const TextStyle(
+                        fontSize: 14, color: Colors.blue)),
+              ],
+            ),
+          ],
           const Divider(height: 24),
           _row('합계', '${_fmt(cart.total)}원', bold: true, color: Colors.orange),
+          if (cart.weatherSurcharge > 0) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, size: 13, color: Colors.blue),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '현재 우천 할증이 적용되었습니다. 날씨 상황에 따라 30분 단위로 변경될 수 있습니다.',
+                      style: TextStyle(fontSize: 11, color: Colors.blue),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

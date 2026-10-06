@@ -17,6 +17,7 @@ class AuthService {
     required String password,
     required String name,
     required String phone,
+    required String vehicleType, // 'bicycle' | 'motorcycle' | 'car'
   }) async {
     final cred = await _auth.createUserWithEmailAndPassword(
         email: email, password: password);
@@ -24,6 +25,7 @@ class AuthService {
       'name': name,
       'phone': phone,
       'email': email,
+      'vehicleType': vehicleType,
       'isOnline': false,
       'createdAt': FieldValue.serverTimestamp(),
     });

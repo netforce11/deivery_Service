@@ -1,6 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/store_model.dart';
 import '../../services/order_service.dart';
+import '../../services/weather_surcharge_service.dart';
+import '../../services/weather_service.dart';
+import '../events/store_events_screen.dart';
+import '../achievements/store_achievements_screen.dart';
 
 class StoreSettingsScreen extends StatefulWidget {
   final StoreModel store;
@@ -12,13 +18,117 @@ class StoreSettingsScreen extends StatefulWidget {
 
 class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
   final _svc = OrderService();
+  final _weatherSvc = WeatherSurchargeService();
   late StoreModel _store;
+  Timer? _surchargeTimer;
 
   @override
   void initState() {
     super.initState();
     _store = widget.store;
+    _checkSurchargeExpiry();
   }
+
+  @override
+  void dispose() {
+    _surchargeTimer?.cancel();
+    super.dispose();
+  }
+
+  /// 할증 만료 체크 및 자동 해제
+  void _checkSurchargeExpiry() {
+    _surchargeTimer?.cancel();
+    if (_store.weatherSurchargeActive && _store.weatherSurchargeExpiry != null) {
+      final remaining = _store.weatherSurchargeExpiry!.difference(DateTime.now());
+      if (remaining.isNegative) {
+        _weatherSvc.deactivateSurcharge();
+        setState(() => _store = _store.copyWith(weatherSurchargeActive: false, clearExpiry: true));
+      } else {
+        _surchargeTimer = Timer(remaining, () async {
+          await _weatherSvc.deactivateSurcharge();
+          if (mounted) setState(() => _store = _store.copyWith(weatherSurchargeActive: false, clearExpiry: true));
+        });
+      }
+    }
+  }
+
+  /// 날씨 확인 후 할증 다이얼로그
+  Future<void> _checkWeatherAndShowDialog() async {
+    if (!_store.weatherSurchargeEnabled) return;
+    final pty = await WeatherService.getCurrentPrecipitation(_store.lat, _store.lng);
+    if (!mounted) return;
+    if (!WeatherService.isRaining(pty) && !WeatherService.isSnowing(pty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('현재 날씨가 맑아서 할증이 필요하지 않아요'), backgroundColor: Colors.blue),
+      );
+      return;
+    }
+    _showWeatherSurchargeDialog(WeatherService.weatherLabel(pty));
+  }
+
+  /// 날씨 할증 수락/거절 다이얼로그
+  void _showWeatherSurchargeDialog(String weatherLabel) {
+    final amount = _store.weatherSurchargeAmount;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: Row(
+          children: [
+            const Text('🌧️ ', style: TextStyle(fontSize: 22)),
+            const SizedBox(width: 4),
+            Text('현재 $weatherLabel가 내리고 있습니다',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('30분간 라이더 배달비 +${_fmtAmount(amount)}원을 추가하시겠습니까?',
+                style: const TextStyle(fontSize: 14)),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                '⚠️ 수락 후 30분간은 변경이 불가합니다.',
+                style: TextStyle(fontSize: 12, color: Colors.orange),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('이번엔 괜찮아요', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(context);
+              await _weatherSvc.activateSurcharge(amount: amount);
+              final expiry = DateTime.now().add(const Duration(minutes: 30));
+              if (mounted) {
+                setState(() => _store = _store.copyWith(
+                  weatherSurchargeActive: true,
+                  weatherSurchargeExpiry: expiry,
+                ));
+                _checkSurchargeExpiry();
+              }
+            },
+            child: const Text('30분 추가할게요'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fmtAmount(int n) => n.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
 
   // ── 공지사항 편집 ────────────────────────────────────────────────────────────
   Future<void> _editNotice() async {
@@ -271,6 +381,30 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // ── 사장님 보상 ────────────────────────────────────────────────────────
+          _SectionCard(
+            icon: Icons.emoji_events_outlined,
+            title: '사장님 보상',
+            subtitle: '주문왕·럭키 번호 보너스 등 달성 현황',
+            subtitleColor: Colors.amber.shade700,
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const StoreAchievementsScreen())),
+            trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+
+          // ── 이벤트 관리 ────────────────────────────────────────────────────────
+          _SectionCard(
+            icon: Icons.celebration_outlined,
+            title: '이벤트 관리',
+            subtitle: '타임어택·럭키오더·챌린지 이벤트 열기',
+            subtitleColor: Colors.orange.shade700,
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const StoreEventsScreen())),
+            trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+
           // ── 공지사항 ──────────────────────────────────────────────────────────
           _SectionCard(
             icon: Icons.campaign_outlined,
@@ -376,7 +510,248 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+
+          // ── 날씨 할증 ──────────────────────────────────────────────────────────
+          _WeatherSurchargeCard(
+            store: _store,
+            weatherSvc: _weatherSvc,
+            surchargeTimer: _surchargeTimer,
+            onCheckWeather: _checkWeatherAndShowDialog,
+            onToggleEnabled: (enabled) async {
+              await _weatherSvc.setWeatherSurchargeEnabled(enabled);
+            },
+            onEditAmount: () async {
+              final ctrl = TextEditingController(
+                  text: _store.weatherSurchargeAmount.toString());
+              final result = await showDialog<int>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('할증 금액 설정'),
+                  content: TextField(
+                    controller: ctrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: '금액 (원)', suffix: Text('원')),
+                  ),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('취소')),
+                    TextButton(
+                        onPressed: () {
+                          final v = int.tryParse(ctrl.text);
+                          if (v != null && v > 0) Navigator.pop(context, v);
+                        },
+                        child: const Text('저장')),
+                  ],
+                ),
+              );
+              if (result != null) await _weatherSvc.setSurchargeAmount(result);
+            },
+          ),
         ],
+      ),
+    );
+  }
+}
+
+// ── 날씨 할증 카드 ────────────────────────────────────────────────────────────
+class _WeatherSurchargeCard extends StatefulWidget {
+  final StoreModel store;
+  final WeatherSurchargeService weatherSvc;
+  final Timer? surchargeTimer;
+  final VoidCallback onCheckWeather;
+  final ValueChanged<bool> onToggleEnabled;
+  final VoidCallback onEditAmount;
+
+  const _WeatherSurchargeCard({
+    required this.store,
+    required this.weatherSvc,
+    required this.surchargeTimer,
+    required this.onCheckWeather,
+    required this.onToggleEnabled,
+    required this.onEditAmount,
+  });
+
+  @override
+  State<_WeatherSurchargeCard> createState() => _WeatherSurchargeCardState();
+}
+
+class _WeatherSurchargeCardState extends State<_WeatherSurchargeCard> {
+  Timer? _countdownTimer;
+  Duration _remaining = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCountdown();
+  }
+
+  @override
+  void didUpdateWidget(_WeatherSurchargeCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _startCountdown();
+  }
+
+  void _startCountdown() {
+    _countdownTimer?.cancel();
+    final expiry = widget.store.weatherSurchargeExpiry;
+    if (expiry == null || !widget.store.weatherSurchargeActive) return;
+    _remaining = expiry.difference(DateTime.now());
+    if (_remaining.isNegative) return;
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        _remaining = expiry.difference(DateTime.now());
+        if (_remaining.isNegative) {
+          _remaining = Duration.zero;
+          _countdownTimer?.cancel();
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
+
+  String _fmtCountdown(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.store;
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 헤더
+            Row(
+              children: [
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.umbrella_outlined,
+                      color: Colors.blue, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('날씨 할증',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15)),
+                      Text('비/눈 시 라이더 배달비 자동 알림',
+                          style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: s.weatherSurchargeEnabled,
+                  onChanged: widget.onToggleEnabled,
+                  activeColor: Colors.blue,
+                ),
+              ],
+            ),
+
+            if (s.weatherSurchargeEnabled) ...[
+              const SizedBox(height: 12),
+              const Divider(height: 1),
+              const SizedBox(height: 12),
+
+              // 현재 상태
+              if (s.weatherSurchargeActive && _remaining > Duration.zero) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.bolt,
+                          color: Colors.orange, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '할증 적용 중 · +${s.weatherSurchargeAmount.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',')}원',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange),
+                        ),
+                      ),
+                      Text(
+                        '남은시간 ${_fmtCountdown(_remaining)}',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.orange.shade700),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else ...[
+                Row(
+                  children: [
+                    const Icon(Icons.circle,
+                        color: Colors.grey, size: 10),
+                    const SizedBox(width: 6),
+                    Text(
+                      '대기 중 · 할증 금액: ${s.weatherSurchargeAmount.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',')}원',
+                      style: const TextStyle(
+                          color: Colors.grey, fontSize: 13),
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: widget.onEditAmount,
+                      icon: const Icon(Icons.edit, size: 14),
+                      label: const Text('금액 변경',
+                          style: TextStyle(fontSize: 12)),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
+              const SizedBox(height: 10),
+
+              // 날씨 확인 버튼
+              if (!s.weatherSurchargeActive)
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: widget.onCheckWeather,
+                    icon: const Icon(Icons.cloud_outlined, size: 18),
+                    label: const Text('지금 날씨 확인'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blue,
+                      side: const BorderSide(color: Colors.blue),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
       ),
     );
   }

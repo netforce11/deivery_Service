@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/order_model.dart';
+import 'delivery_detail_screen.dart';
 
 class EarningsScreen extends StatefulWidget {
   const EarningsScreen({super.key});
@@ -1266,37 +1267,71 @@ class _DeliveryRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       elevation: 1,
-      child: Padding(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Row(
-          children: [
-            Text(
-              '${order.createdAt.hour.toString().padLeft(2, '0')}:${order.createdAt.minute.toString().padLeft(2, '0')}',
-              style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade500,
-                  fontFamily: 'monospace'),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                order.deliveryAddress,
-                style:
-                    TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => DeliveryDetailScreen(order: order)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            children: [
+              Text(
+                '${order.createdAt.hour.toString().padLeft(2, '0')}:${order.createdAt.minute.toString().padLeft(2, '0')}',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                    fontFamily: 'monospace'),
               ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '+${_fmt(order.riderPay)}원',
-              style: TextStyle(
-                  color: Colors.green.shade600,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      order.storeName,
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      order.deliveryAddress,
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '+${_fmt(order.riderPay)}원',
+                    style: TextStyle(
+                        color: Colors.green.shade600,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14),
+                  ),
+                  if (order.isLongDistance)
+                    Container(
+                      margin: const EdgeInsets.only(top: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text('장거리',
+                          style: TextStyle(fontSize: 9, color: Colors.purple.shade600, fontWeight: FontWeight.bold)),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right, size: 16, color: Colors.grey.shade300),
+            ],
+          ),
         ),
       ),
     );
