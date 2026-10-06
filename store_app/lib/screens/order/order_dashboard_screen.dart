@@ -6,6 +6,7 @@ import '../../services/auth_service.dart';
 import '../../services/order_service.dart';
 import '../menu/menu_management_screen.dart';
 import '../settlement/settlement_screen.dart';
+import '../settings/store_settings_screen.dart';
 
 class OrderDashboardScreen extends StatefulWidget {
   const OrderDashboardScreen({super.key});
@@ -22,8 +23,8 @@ class _OrderDashboardScreenState extends State<OrderDashboardScreen>
   bool _loadingStore = true;
   late TabController _tabController;
 
-  // 새 주문 알림용 — 이전 pending 개수 추적
-  int _prevPendingCount = 0;
+  // 새 주문 알림용
+  int _prevPendingCount = -1;
 
   @override
   void initState() {
@@ -47,30 +48,82 @@ class _OrderDashboardScreenState extends State<OrderDashboardScreen>
 
   void _checkNewOrders(List<OrderModel> orders) {
     final pending = orders.where((o) => o.status == 'pending').length;
-    if (pending > _prevPendingCount && _prevPendingCount >= 0) {
-      // 새 주문 알림
+    if (_prevPendingCount >= 0 && pending > _prevPendingCount) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Row(
-                children: [
-                  Icon(Icons.notifications_active, color: Colors.white),
-                  SizedBox(width: 8),
-                  Text('🔔 새 주문이 들어왔어요!',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                ],
-              ),
-              backgroundColor: Colors.indigo,
-              duration: const Duration(seconds: 3),
-              behavior: SnackBarBehavior.floating,
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.notifications_active, color: Colors.white),
+                SizedBox(width: 8),
+                Text('🔔 새 주문이 들어왔어요!',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ],
             ),
-          );
-          _tabController.animateTo(0); // 대기중 탭으로 이동
-        }
+            backgroundColor: Colors.indigo,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        _tabController.animateTo(0);
       });
     }
     _prevPendingCount = pending;
+  }
+
+  // 거절 사유 선택 다이얼로그
+  Future<void> _confirmReject(String orderId) async {
+    String? selectedReason;
+    final reasons = [
+      '재료 소진',
+      '영업 준비 중',
+      '주문량 초과',
+      '배달 불가 지역',
+      '기타',
+    ];
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('주문 거절'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('거절 사유를 선택하세요',
+                  style: TextStyle(fontSize: 13, color: Colors.grey)),
+              const SizedBox(height: 12),
+              ...reasons.map((r) => RadioListTile<String>(
+                    title: Text(r),
+                    value: r,
+                    groupValue: selectedReason,
+                    dense: true,
+                    activeColor: Colors.red,
+                    onChanged: (v) => setState(() => selectedReason = v),
+                  )),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('취소')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red, foregroundColor: Colors.white),
+              onPressed: selectedReason == null
+                  ? null
+                  : () => Navigator.pop(ctx, true),
+              child: const Text('거절'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok == true && selectedReason != null) {
+      await _orderService.rejectOrderWithReason(orderId, selectedReason!);
+    }
   }
 
   @override
@@ -97,10 +150,7 @@ class _OrderDashboardScreenState extends State<OrderDashboardScreen>
               const Text('등록된 가게가 없습니다',
                   style: TextStyle(color: Colors.grey, fontSize: 16)),
               const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: _loadStore,
-                child: const Text('새로고침'),
-              ),
+              ElevatedButton(onPressed: _loadStore, child: const Text('새로고침')),
             ],
           ),
         ),
@@ -111,19 +161,14 @@ class _OrderDashboardScreenState extends State<OrderDashboardScreen>
       stream: _orderService.watchStoreOrders(_store!.id),
       builder: (context, snap) {
         final orders = snap.data ?? [];
-
         if (snap.hasData) _checkNewOrders(orders);
 
         final pending = orders.where((o) => o.status == 'pending').toList();
         final active = orders
-            .where((o) =>
-                o.status == 'accepted' ||
-                o.status == 'assigned' ||
-                o.status == 'picked_up')
+            .where((o) => ['accepted', 'assigned', 'picked_up'].contains(o.status))
             .toList();
         final done = orders
-            .where((o) =>
-                o.status == 'delivered' || o.status == 'cancelled')
+            .where((o) => ['delivered', 'cancelled'].contains(o.status))
             .toList();
 
         return Scaffold(
@@ -135,10 +180,34 @@ class _OrderDashboardScreenState extends State<OrderDashboardScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(_store!.name,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                Text('주문 관리',
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.indigo.shade100)),
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                    Text('주문 관리',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.indigo.shade100)),
+                    const SizedBox(width: 8),
+                    // 예상 조리시간 표시
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.timer, size: 10, color: Colors.white70),
+                          const SizedBox(width: 3),
+                          Text('${_store!.estimatedMinutes}분',
+                              style: const TextStyle(
+                                  fontSize: 10, color: Colors.white70)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
             actions: [
@@ -149,28 +218,14 @@ class _OrderDashboardScreenState extends State<OrderDashboardScreen>
                     _store!.isOpen ? '영업중' : '준비중',
                     style: TextStyle(
                       fontSize: 13,
-                      color: _store!.isOpen
-                          ? Colors.greenAccent
-                          : Colors.white60,
+                      color: _store!.isOpen ? Colors.greenAccent : Colors.white60,
                     ),
                   ),
                   Switch(
                     value: _store!.isOpen,
                     onChanged: (val) async {
                       await _orderService.toggleStoreOpen(_store!.id, val);
-                      setState(() =>
-                          _store = StoreModel(
-                            id: _store!.id,
-                            name: _store!.name,
-                            category: _store!.category,
-                            address: _store!.address,
-                            lat: _store!.lat,
-                            lng: _store!.lng,
-                            phone: _store!.phone,
-                            ownerId: _store!.ownerId,
-                            isOpen: val,
-                            createdAt: _store!.createdAt,
-                          ));
+                      setState(() => _store = _store!.copyWith(isOpen: val));
                     },
                     activeColor: Colors.greenAccent,
                     inactiveThumbColor: Colors.white54,
@@ -183,9 +238,21 @@ class _OrderDashboardScreenState extends State<OrderDashboardScreen>
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => MenuManagementScreen(store: _store!),
-                  ),
+                      builder: (_) => MenuManagementScreen(store: _store!)),
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: '가게 설정',
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => StoreSettingsScreen(store: _store!)),
+                  );
+                  // 설정 변경 후 가게 정보 새로고침
+                  _loadStore();
+                },
               ),
               IconButton(
                 icon: const Icon(Icons.account_balance_wallet_outlined),
@@ -193,15 +260,12 @@ class _OrderDashboardScreenState extends State<OrderDashboardScreen>
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => SettlementScreen(store: _store!),
-                  ),
+                      builder: (_) => SettlementScreen(store: _store!)),
                 ),
               ),
               IconButton(
                 icon: const Icon(Icons.logout),
-                onPressed: () async {
-                  await _authService.signOut();
-                },
+                onPressed: () async => await _authService.signOut(),
               ),
             ],
             bottom: TabBar(
@@ -238,68 +302,81 @@ class _OrderDashboardScreenState extends State<OrderDashboardScreen>
               ],
             ),
           ),
-          body: snap.connectionState == ConnectionState.waiting
-              ? const Center(
-                  child: CircularProgressIndicator(color: Colors.indigo))
-              : TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _OrderList(
-                      orders: pending,
-                      emptyMsg: '대기 중인 주문이 없어요',
-                      emptyIcon: Icons.hourglass_empty,
-                      onAccept: (id) => _orderService.acceptOrder(id),
-                      onReject: (id) => _confirmReject(id),
-                    ),
-                    _OrderList(
-                      orders: active,
-                      emptyMsg: '진행 중인 주문이 없어요',
-                      emptyIcon: Icons.delivery_dining_outlined,
-                    ),
-                    _OrderList(
-                      orders: done,
-                      emptyMsg: '완료된 주문이 없어요',
-                      emptyIcon: Icons.check_circle_outline,
-                    ),
-                  ],
+          body: Column(
+            children: [
+              // 공지사항 배너
+              if (_store!.notice.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  color: Colors.amber.shade50,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.campaign,
+                          size: 16, color: Colors.amber.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _store!.notice,
+                          style: TextStyle(
+                              fontSize: 13, color: Colors.amber.shade900),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+              Expanded(
+                child: snap.connectionState == ConnectionState.waiting
+                    ? const Center(
+                        child: CircularProgressIndicator(color: Colors.indigo))
+                    : TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _OrderList(
+                            orders: pending,
+                            emptyMsg: '대기 중인 주문이 없어요',
+                            emptyIcon: Icons.hourglass_empty,
+                            onAccept: (id) => _orderService.acceptOrder(id),
+                            onReject: (id) => _confirmReject(id),
+                          ),
+                          _OrderList(
+                            orders: active,
+                            emptyMsg: '진행 중인 주문이 없어요',
+                            emptyIcon: Icons.delivery_dining_outlined,
+                          ),
+                          _OrderList(
+                            orders: done,
+                            emptyMsg: '완료된 주문이 없어요',
+                            emptyIcon: Icons.check_circle_outline,
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
         );
       },
     );
   }
 
-  Future<void> _confirmReject(String orderId) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('주문 거절'),
-        content: const Text('이 주문을 거절하시겠어요?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('취소')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('거절'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) await _orderService.rejectOrder(orderId);
-  }
-
   Widget _badge(int count, {Color color = Colors.red}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
+      decoration:
+          BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
       child: Text('$count',
-          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+          style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold)),
     );
   }
 }
 
-// ── 주문 목록 위젯 ─────────────────────────────────────────────────────────
+// ── 주문 목록 위젯 ─────────────────────────────────────────────────────────────
 class _OrderList extends StatelessWidget {
   final List<OrderModel> orders;
   final String emptyMsg;
@@ -333,16 +410,13 @@ class _OrderList extends StatelessWidget {
     return ListView.builder(
       padding: const EdgeInsets.all(12),
       itemCount: orders.length,
-      itemBuilder: (_, i) => _OrderCard(
-        order: orders[i],
-        onAccept: onAccept,
-        onReject: onReject,
-      ),
+      itemBuilder: (_, i) =>
+          _OrderCard(order: orders[i], onAccept: onAccept, onReject: onReject),
     );
   }
 }
 
-// ── 주문 카드 ──────────────────────────────────────────────────────────────
+// ── 주문 카드 ──────────────────────────────────────────────────────────────────
 class _OrderCard extends StatelessWidget {
   final OrderModel order;
   final Future<void> Function(String)? onAccept;
@@ -371,7 +445,6 @@ class _OrderCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 헤더
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -394,8 +467,6 @@ class _OrderCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-
-              // 주문 아이템
               ...order.items.map((item) => Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
@@ -404,19 +475,15 @@ class _OrderCard extends StatelessWidget {
                         const SizedBox(width: 8),
                         Expanded(child: Text(item.name)),
                         Text('${item.quantity}개',
-                            style:
-                                TextStyle(color: Colors.grey.shade600)),
+                            style: TextStyle(color: Colors.grey.shade600)),
                         const SizedBox(width: 12),
                         Text('${_fmt(item.price * item.quantity)}원',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w500)),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w500)),
                       ],
                     ),
                   )),
-
               const Divider(height: 20),
-
-              // 금액 + 주소
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -447,8 +514,20 @@ class _OrderCard extends StatelessWidget {
                   ),
                 ],
               ),
-
-              // 수락/거절 버튼 (pending일 때만)
+              // 거절 사유 표시 (cancelled 상태)
+              if (order.status == 'cancelled' && order.cancelReason != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 14, color: Colors.red.shade300),
+                    const SizedBox(width: 4),
+                    Text('거절 사유: ${order.cancelReason}',
+                        style: TextStyle(
+                            color: Colors.red.shade400, fontSize: 12)),
+                  ],
+                ),
+              ],
               if (order.status == 'pending') ...[
                 const SizedBox(height: 14),
                 Row(

@@ -46,6 +46,7 @@ class OrderModel {
   final double deliveryLng;
   // pending → accepted → assigned → picked_up → delivered → cancelled
   final String status;
+  final String? cancelReason;
   final DateTime createdAt;
 
   OrderModel({
@@ -63,6 +64,7 @@ class OrderModel {
     required this.deliveryLat,
     required this.deliveryLng,
     required this.status,
+    this.cancelReason,
     required this.createdAt,
   });
 
@@ -85,6 +87,7 @@ class OrderModel {
       deliveryLat: map['deliveryLat'] ?? 0.0,
       deliveryLng: map['deliveryLng'] ?? 0.0,
       status: map['status'] ?? 'pending',
+      cancelReason: map['cancelReason'],
       createdAt: map['createdAt']?.toDate() ?? DateTime.now(),
     );
   }

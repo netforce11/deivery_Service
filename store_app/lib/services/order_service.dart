@@ -79,4 +79,28 @@ class OrderService {
   Future<void> toggleMenuAvailable(String menuId, bool isAvailable) async {
     await _db.collection('menus').doc(menuId).update({'isAvailable': isAvailable});
   }
+
+  // 주문 거절 (사유 포함)
+  Future<void> rejectOrderWithReason(String orderId, String reason) async {
+    await _db.collection('orders').doc(orderId).update({
+      'status': 'cancelled',
+      'cancelReason': reason,
+    });
+  }
+
+  // 공지사항 업데이트
+  Future<void> updateNotice(String storeId, String notice) async {
+    await _db.collection('stores').doc(storeId).update({'notice': notice});
+  }
+
+  // 예상 조리시간 업데이트
+  Future<void> updateEstimatedMinutes(String storeId, int minutes) async {
+    await _db.collection('stores').doc(storeId).update({'estimatedMinutes': minutes});
+  }
+
+  // 영업시간 업데이트
+  Future<void> updateBusinessHours(
+      String storeId, Map<String, Map<String, String>> hours) async {
+    await _db.collection('stores').doc(storeId).update({'businessHours': hours});
+  }
 }
