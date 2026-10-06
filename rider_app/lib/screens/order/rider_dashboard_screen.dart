@@ -6,6 +6,7 @@ import '../../models/order_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/order_service.dart';
 import '../../services/location_service.dart';
+import '../earnings/earnings_screen.dart';
 
 class RiderDashboardScreen extends StatefulWidget {
   const RiderDashboardScreen({super.key});
@@ -53,6 +54,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+            tooltip: '수익 관리',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const EarningsScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () {
