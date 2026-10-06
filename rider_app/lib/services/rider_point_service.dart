@@ -176,17 +176,27 @@ class RiderPointService {
     if (!snap.exists) return;
     final data = snap.data() as Map<String, dynamic>;
     final total = (data['totalPoints'] ?? 0) as int;
-    final prevTotal = total - 0; // 이미 업데이트된 값
-    // 100의 배수를 넘었을 때 부스터 지급
-    // 이전 총점의 100 단위와 현재의 차이로 계산
-    final charges = total ~/ 100;
-    final prevCharges = (data['boosterCharges'] ?? 0) as int;
-    // 충전 횟수가 부족하면 추가
-    // (누적 충전 가능 횟수 = total ~/ 100, 이미 받은 횟수는 별도 추적 필요)
-    // 간단 구현: totalPoints가 100의 배수가 될 때마다 +1
+    // 100점 달성마다 부스터 +1, 획득 시각(boosterGrantedAt) 갱신
     if (total > 0 && total % 100 == 0) {
       await _col.doc(_uid).update({
         'boosterCharges': FieldValue.increment(1),
+        'boosterGrantedAt': Timestamp.fromDate(DateTime.now()),
+      });
+    }
+  }
+
+  /// 월 구매 횟수 초기화 (월이 바뀌었으면 리셋)
+  Future<void> _resetMonthlyPurchaseIfNeeded(
+      Map<String, dynamic> data) async {
+    if (_uid == null) return;
+    final resetTs = data['purchaseCountResetAt'] as Timestamp?;
+    if (resetTs == null) return;
+    final reset = resetTs.toDate();
+    final now = DateTime.now();
+    if (reset.year != now.year || reset.month != now.month) {
+      await _col.doc(_uid).update({
+        'monthlyPurchaseCount': 0,
+        'purchaseCountResetAt': Timestamp.fromDate(now),
       });
     }
   }
